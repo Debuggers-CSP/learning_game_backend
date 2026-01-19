@@ -14,7 +14,7 @@ else
 fi
 
 # Run the Flask app
-echo "✓ Starting Flask on http://localhost:8587"
+echo "✓ Starting Flask on http://localhost:8300"
 echo ""
 python main.py
 
