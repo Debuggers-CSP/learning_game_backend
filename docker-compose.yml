@@ -6,7 +6,7 @@ services:
                       env_file:
                               - .env
                       ports:
-                              - "8300:8300"
+                              - "8320:8320"
                       volumes:
                               - ./instance:/instance
                       restart: unless-stopped

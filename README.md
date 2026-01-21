@@ -107,11 +107,11 @@ pip install -r requirements.txt
     - Start with Play button
       - Play button sub option contains Debug
     - Click on localhost:8087 in terminal to launch
-      - Output window will contain page to launch http://localhost:8300
+      - Output window will contain page to launch http://localhost:8320
     - Login using your secrets from env
 
   - Basic API test
-    - [Jokes](http://localhost:8300/api/jokes/)
+    - [Jokes](http://localhost:8320/api/jokes/)
 
 ### User Operations
 | Purpose | Correct Endpoint | What It Does |
