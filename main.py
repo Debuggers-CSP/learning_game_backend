@@ -45,6 +45,9 @@ from model.persona import Persona, initPersonas, initPersonaUsers
 from model.post import Post, init_posts
 from model.microblog import MicroBlog, Topic, initMicroblogs
 from hacks.jokes import initJokes 
+from api.robop_api import robop_api
+from model.robop_user import RobopUser, initRobopUsers
+
 # from model.announcement import Announcement ##temporary revert
 
 # server only Views
@@ -81,12 +84,13 @@ app.register_blueprint(feedback_api)
 app.register_blueprint(data_export_import_api)  # Register the data export/import API
 app.register_blueprint(joke_api)  # Register the joke API blueprint
 app.register_blueprint(post_api)  # Register the social media post API
+app.register_blueprint(robop_api)
 # app.register_blueprint(announcement_api) ##temporary revert
 
 # Jokes file initialization
 with app.app_context():
     initJokes()
-
+    initRobopUsers()
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
@@ -162,6 +166,12 @@ def sections():
 def persona():
     personas = Persona.query.all()
     return render_template("persona.html", personas=personas)
+
+@app.route('/robop_users/')
+@login_required
+def robop_users():
+    users = RobopUser.query.all()
+    return render_template("robop_users.html", users=users)
 
 # Helper function to extract uploads for a user (ie PFP image)
 @app.route('/uploads/<path:filename>')
