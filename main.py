@@ -6,6 +6,7 @@ from flask_login import current_user, login_user, logout_user
 from flask.cli import AppGroup
 from flask_login import current_user, login_required
 from flask import current_app
+from flask import render_template
 from werkzeug.security import generate_password_hash
 from dotenv import load_dotenv
 from api.jwt_authorize import token_required
@@ -167,11 +168,22 @@ def persona():
     personas = Persona.query.all()
     return render_template("persona.html", personas=personas)
 
-@app.route('/robop_users/')
-@login_required
+@app.route("/robop/users")
 def robop_users():
-    users = RobopUser.query.all()
-    return render_template("robop_users.html", users=users)
+    users = RobopUser.query.order_by(RobopUser.id.asc()).all()
+
+    robop_user_data = []
+    for u in users:
+        robop_user_data.append({
+            "id": u.id,
+            "uid": u.uid,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "created": u._created.isoformat() if getattr(u, "_created", None) else None,
+            "last_login": u._last_login.isoformat() if getattr(u, "_last_login", None) else None,
+        })
+
+    return render_template("robop_users.html", robop_user_data=robop_user_data)
 
 # Helper function to extract uploads for a user (ie PFP image)
 @app.route('/uploads/<path:filename>')

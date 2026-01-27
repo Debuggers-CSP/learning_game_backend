@@ -1,0 +1,43 @@
+{% extends "layouts/base.html" %}
+
+{% block body %}
+
+<div class="container mt-5">
+  <h1>Robop Users</h1>
+
+  <table class="table table-striped" id="robopUserTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>UID</th>
+        <th>First</th>
+        <th>Last</th>
+        <th>Created</th>
+        <th>Last Login</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in robop_user_data %}
+      <tr id="robop-user-{{ u.id }}">
+        <td>{{ u.id }}</td>
+        <td>{{ u.uid }}</td>
+        <td>{{ u.first_name }}</td>
+        <td>{{ u.last_name }}</td>
+        <td>{{ u.created or "—" }}</td>
+        <td>{{ u.last_login or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  $(document).ready(function () {
+    $("#robopUserTable").DataTable();
+  });
+</script>
+
+{% endblock %}
+
+{% block background %}
+{% endblock %}
