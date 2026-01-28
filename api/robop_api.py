@@ -1,13 +1,7 @@
 # api/robop_api.py
-"""
-Robop API endpoints following your conventions:
-- Blueprint registered in main file
-- Uses jsonify + db model in model/robop_user.py
-- Accepts BOTH old payload keys (GitHubID/Password) and new (id/password)
-"""
 
 from flask import Blueprint, request, jsonify, session
-from model.robop_user import RobopUser
+from model.robop_user import RobopUser, BadgeThreshold, UserBadge
 from datetime import datetime
 
 from __init__ import db
@@ -115,3 +109,38 @@ def me():
 
     return jsonify({"success": True, "user": user.to_dict()}), 200
 
+
+# --- APPENDED: NEW BADGE ROUTES ---
+
+@robop_api.route("/badge_thresholds", methods=["GET"])
+def get_thresholds():
+    """Returns the list of badge criteria for the frontend to loop through."""
+    thresholds = BadgeThreshold.query.order_by(BadgeThreshold._threshold.desc()).all()
+    return jsonify([t.to_dict() for t in thresholds]), 200
+
+
+@robop_api.route("/assign_badge", methods=["POST"])
+def assign_badge():
+    """Saves an earned badge to the database for the logged-in user."""
+    uid = session.get("robop_uid")
+    if not uid:
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    
+    user = RobopUser.query.filter_by(_uid=uid).first()
+    data = _get_json()
+    
+    sector_id = data.get("sector_id")
+    score = data.get("score")
+    badge_name = data.get("badge_name")
+
+    if sector_id is None or score is None or not badge_name:
+        return jsonify({"success": False, "message": "Missing badge data"}), 400
+
+    try:
+        new_badge = UserBadge(user_id=user.id, sector_id=sector_id, score=score, badge_name=badge_name)
+        db.session.add(new_badge)
+        db.session.commit()
+        return jsonify({"success": True, "message": f"Badge '{badge_name}' saved!"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "message": str(e)}), 500
