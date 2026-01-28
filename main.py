@@ -168,6 +168,115 @@ def persona():
     personas = Persona.query.all()
     return render_template("persona.html", personas=personas)
 
+@app.route("/robop/api/users", methods=["GET"])
+def get_robop_users_api():
+    """API to get all Robop users data"""
+    try:
+        users = RobopUser.query.order_by(RobopUser.id.asc()).all()
+        users_data = []
+        
+        for u in users:
+            users_data.append({
+                "id": u.id,
+                "uid": u.uid,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": getattr(u, 'email', None),
+                "role": getattr(u, 'role', 'user'),
+                "status": getattr(u, 'status', 'active'),
+                "created": u._created.isoformat() if hasattr(u, "_created") and u._created else None,
+                "last_login": u._last_login.isoformat() if hasattr(u, "_last_login") and u._last_login else None,
+            })
+            
+        return jsonify({"success": True, "data": users_data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/robop/api/users/<int:user_id>", methods=["PUT"])
+def update_robop_user(user_id):
+    """API to update Robop user information"""
+    try:
+        user = RobopUser.query.get(user_id)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+        
+        data = request.get_json()
+        
+        # Update fields if provided
+        if 'uid' in data:
+            user.uid = data['uid']
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+        if 'last_name' in data:
+            user.last_name = data['last_name']
+        if 'email' in data:
+            user.email = data['email']
+        if 'role' in data:
+            user.role = data['role']
+        if 'status' in data:
+            user.status = data['status']
+        
+        db.session.commit()
+        return jsonify({"success": True, "message": "User updated successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 400
+
+@app.route("/robop/api/users/<int:user_id>", methods=["DELETE"])
+def delete_robop_user(user_id):
+    """API to delete a Robop user"""
+    try:
+        user = RobopUser.query.get(user_id)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+        
+        db.session.delete(user)
+        db.session.commit()
+        
+        return jsonify({"success": True, "message": "User deleted successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 400
+
+@app.route("/robop/api/users", methods=["POST"])
+def add_robop_user():
+    """API to add a new Robop user"""
+    try:
+        data = request.get_json()
+        
+        # Check required fields
+        required_fields = ["uid", "first_name", "last_name"]
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({"success": False, "error": f"{field} is required"}), 400
+        
+        # Check if user already exists
+        existing_user = RobopUser.query.filter_by(uid=data["uid"]).first()
+        if existing_user:
+            return jsonify({"success": False, "error": "User ID already exists"}), 400
+        
+        # Create new user
+        new_user = RobopUser(
+            uid=data["uid"],
+            first_name=data["first_name"],
+            last_name=data["last_name"],
+            email=data.get("email"),
+            role=data.get("role", "user"),
+            status=data.get("status", "active")
+        )
+        
+        db.session.add(new_user)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True, 
+            "message": "User added successfully",
+            "user_id": new_user.id
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 400
+    
 @app.route("/robop/users")
 def robop_users():
     users = RobopUser.query.order_by(RobopUser.id.asc()).all()

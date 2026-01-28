@@ -3,7 +3,23 @@
 {% block body %}
 
 <div class="container mt-5">
-  <h1>Robop Users</h1>
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Robop Users</h1>
+    <div>
+      <button id="toggleEditBtn" class="btn btn-primary me-2">
+        <i class="bi bi-pencil"></i> <span id="editBtnText">Enable Edit Mode</span>
+      </button>
+      <button id="refreshBtn" class="btn btn-secondary">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+    </div>
+  </div>
+  
+  <div id="editModeAlert" class="alert alert-info d-none">
+    <i class="bi bi-info-circle"></i> Edit Mode: Click on any cell to edit. Press Enter to save, Esc to cancel.
+  </div>
+  
+  <div id="saveStatus" class="alert d-none"></div>
 
   <table class="table table-striped" id="robopUserTable">
     <thead>
@@ -12,6 +28,9 @@
         <th>UID</th>
         <th>First</th>
         <th>Last</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Status</th>
         <th>Created</th>
         <th>Last Login</th>
 
@@ -22,16 +41,39 @@
         <th>Best Sector</th>
         <th>Last Badge</th>
         <th>Last Earned</th>
+        <th>Actions</th>
       </tr>
     </thead>
 
     <tbody>
       {% for u in robop_user_data %}
-      <tr id="robop-user-{{ u.id }}">
+      <tr id="robop-user-{{ u.id }}" data-id="{{ u.id }}">
         <td>{{ u.id }}</td>
-        <td>{{ u.uid }}</td>
-        <td>{{ u.first_name }}</td>
-        <td>{{ u.last_name }}</td>
+        <td class="editable" data-field="uid">{{ u.uid }}</td>
+        <td class="editable" data-field="first_name">{{ u.first_name }}</td>
+        <td class="editable" data-field="last_name">{{ u.last_name }}</td>
+        <td class="editable" data-field="email">{{ u.email or "" }}</td>
+        <td class="editable" data-field="role">
+          {% if u.role %}
+            <span class="badge 
+              {% if u.role == 'Admin' %}bg-danger
+              {% elif u.role == 'moderator' %}bg-warning
+              {% else %}bg-secondary{% endif %}">
+              {{ u.role }}
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="editable" data-field="status">
+          {% if u.status %}
+            <span class="badge 
+              {% if u.status == 'active' %}bg-success
+              {% elif u.status == 'inactive' %}bg-danger
+              {% elif u.status == 'pending' %}bg-warning
+              {% else %}bg-secondary{% endif %}">
+              {{ u.status }}
+            </span>
+          {% else %}—{% endif %}
+        </td>
         <td>{{ u.created or "—" }}</td>
         <td>{{ u.last_login or "—" }}</td>
 
@@ -42,16 +84,355 @@
         <td>{{ u.best_sector or "—" }}</td>
         <td>{{ u.last_badge or "—" }}</td>
         <td>{{ u.last_earned or "—" }}</td>
+        <td class="action-cell">
+          <button class="btn btn-sm btn-danger delete-btn" data-id="{{ u.id }}">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
+<!-- 添加用户模态框 -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add New User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="addUserForm">
+          <div class="mb-3">
+            <label class="form-label">User ID *</label>
+            <input type="text" class="form-control" name="uid" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">First Name *</label>
+            <input type="text" class="form-control" name="first_name" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Last Name *</label>
+            <input type="text" class="form-control" name="last_name" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" name="email">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Role</label>
+            <select class="form-control" name="role">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+              <option value="moderator">Moderator</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Status</label>
+            <select class="form-control" name="status">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="pending">Pending</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="saveNewUserBtn">Save User</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 添加必要的CSS和JS -->
+<style>
+  .editable {
+    cursor: pointer;
+    position: relative;
+  }
+  .editable:hover {
+    background-color: #f8f9fa;
+  }
+  .editable.editing {
+    padding: 0;
+  }
+  .editable-input {
+    width: 100%;
+    border: 1px solid #0d6efd;
+    padding: 6px;
+    margin: -1px;
+    border-radius: 4px;
+  }
+  .edit-mode .editable {
+    background-color: #f0f8ff;
+  }
+  .action-cell {
+    white-space: nowrap;
+  }
+  #saveStatus {
+    transition: all 0.3s ease;
+  }
+</style>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+
 <script>
-  $(document).ready(function () {
-    $("#robopUserTable").DataTable();
+$(document).ready(function() {
+  let isEditMode = false;
+  let table = null;
+  
+  // 初始化DataTable
+  table = $('#robopUserTable').DataTable({
+    pageLength: 25,
+    responsive: true
   });
+  
+  // 切换编辑模式
+  $('#toggleEditBtn').click(function() {
+    isEditMode = !isEditMode;
+    
+    if (isEditMode) {
+      // 进入编辑模式
+      $('#editBtnText').text('Disable Edit Mode');
+      $('#toggleEditBtn').removeClass('btn-primary').addClass('btn-warning');
+      $('#editModeAlert').removeClass('d-none');
+      $('body').addClass('edit-mode');
+      // 显示添加用户按钮
+      if (!$('#addUserBtn').length) {
+        $('#toggleEditBtn').after(
+          '<button id="addUserBtn" class="btn btn-success me-2"><i class="bi bi-person-plus"></i> Add User</button>'
+        );
+      }
+    } else {
+      // 退出编辑模式
+      $('#editBtnText').text('Enable Edit Mode');
+      $('#toggleEditBtn').removeClass('btn-warning').addClass('btn-primary');
+      $('#editModeAlert').addClass('d-none');
+      $('body').removeClass('edit-mode');
+      // 移除添加用户按钮
+      $('#addUserBtn').remove();
+    }
+  });
+  
+  // 刷新按钮
+  $('#refreshBtn').click(function() {
+    location.reload();
+  });
+  
+  // 点击单元格编辑
+  $(document).on('click', '.editable', function() {
+    if (!isEditMode) return;
+    
+    const $cell = $(this);
+    if ($cell.hasClass('editing')) return;
+    
+    const originalContent = $cell.html().trim();
+    const field = $cell.data('field');
+    const userId = $cell.closest('tr').data('id');
+    
+    // 保存原始值
+    $cell.data('original', originalContent);
+    
+    // 根据字段类型创建不同的编辑器
+    if (field === 'role' || field === 'status') {
+      // 下拉选择器
+      const currentValue = $cell.find('.badge').text().trim().toLowerCase() || 
+                          (field === 'role' ? 'user' : 'active');
+      let options = '';
+      
+      if (field === 'role') {
+        const roleOptions = ['user', 'admin', 'moderator'];
+        roleOptions.forEach(role => {
+          const selected = role === currentValue ? 'selected' : '';
+          options += `<option value="${role}" ${selected}>${role.charAt(0).toUpperCase() + role.slice(1)}</option>`;
+        });
+      } else {
+        const statusOptions = ['active', 'inactive', 'pending'];
+        statusOptions.forEach(status => {
+          const selected = status === currentValue ? 'selected' : '';
+          options += `<option value="${status}" ${selected}>${status.charAt(0).toUpperCase() + status.slice(1)}</option>`;
+        });
+      }
+      
+      $cell.html(`<select class="form-select form-select-sm editable-select" data-field="${field}" data-id="${userId}">${options}</select>`)
+           .addClass('editing');
+      $cell.find('select').focus();
+    } else {
+      // 文本输入框
+      const currentValue = $cell.text().trim();
+      $cell.html(`<input type="text" class="editable-input" value="${currentValue}" data-field="${field}" data-id="${userId}">`)
+           .addClass('editing');
+      $cell.find('input').focus().select();
+    }
+  });
+  
+  // 保存编辑（Enter键或失去焦点）
+  $(document).on('keydown blur', '.editable-input', function(e) {
+    if (e.type === 'keydown' && e.which !== 13) return;
+    
+    const $input = $(this);
+    const newValue = $input.val().trim();
+    const $cell = $input.closest('.editable');
+    const originalContent = $cell.data('original');
+    const field = $input.data('field');
+    const userId = $input.data('id');
+    
+    if (newValue !== originalContent && newValue !== '') {
+      updateUser(userId, field, newValue, $cell);
+    } else {
+      // 恢复原始内容
+      $cell.html(originalContent).removeClass('editing');
+    }
+  });
+  
+  // 保存下拉选择
+  $(document).on('change blur', '.editable-select', function() {
+    const $select = $(this);
+    const newValue = $select.val();
+    const $cell = $select.closest('.editable');
+    const originalContent = $cell.data('original');
+    const field = $select.data('field');
+    const userId = $select.data('id');
+    
+    if (newValue !== originalContent) {
+      updateUser(userId, field, newValue, $cell);
+    } else {
+      $cell.html(originalContent).removeClass('editing');
+    }
+  });
+  
+  // 取消编辑（Esc键）
+  $(document).on('keydown', '.editable-input, .editable-select', function(e) {
+    if (e.keyCode === 27) {
+      const $input = $(this);
+      const $cell = $input.closest('.editable');
+      const originalContent = $cell.data('original');
+      $cell.html(originalContent).removeClass('editing');
+    }
+  });
+  
+  // 更新用户API调用
+  function updateUser(userId, field, value, $cell) {
+    const data = {};
+    data[field] = value;
+    
+    showStatus('Saving...', 'info');
+    
+    $.ajax({
+      url: `/robop/api/users/${userId}`,
+      method: 'PUT',
+      contentType: 'application/json',
+      data: JSON.stringify(data),
+      success: function(response) {
+        if (response.success) {
+          showStatus('Saved successfully!', 'success');
+          
+          // 更新单元格显示
+          if (field === 'role' || field === 'status') {
+            const badgeClass = field === 'role' ? 
+              (value === 'admin' ? 'danger' : value === 'moderator' ? 'warning' : 'secondary') :
+              (value === 'active' ? 'success' : value === 'inactive' ? 'danger' : 'warning');
+            $cell.html(`<span class="badge bg-${badgeClass}">${value}</span>`);
+          } else {
+            $cell.text(value);
+          }
+        } else {
+          showStatus('Error: ' + response.error, 'danger');
+          $cell.html($cell.data('original')); // 恢复原始内容
+        }
+        $cell.removeClass('editing');
+      },
+      error: function(xhr) {
+        showStatus('Error saving: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
+        $cell.html($cell.data('original')).removeClass('editing');
+      }
+    });
+  }
+  
+  // 显示状态信息
+  function showStatus(message, type) {
+    const $status = $('#saveStatus');
+    $status.removeClass('d-none alert-info alert-success alert-danger')
+           .addClass('alert-' + type)
+           .html(`<i class="bi ${type === 'success' ? 'bi-check-circle' : 'bi-exclamation-circle'}"></i> ${message}`);
+    
+    if (type === 'success') {
+      setTimeout(() => {
+        $status.addClass('d-none');
+      }, 3000);
+    }
+  }
+  
+  // 添加用户按钮
+  $(document).on('click', '#addUserBtn', function() {
+    $('#addUserForm')[0].reset();
+    $('#addUserModal').modal('show');
+  });
+  
+  // 保存新用户
+  $('#saveNewUserBtn').click(function() {
+    const formData = {
+      uid: $('input[name="uid"]').val(),
+      first_name: $('input[name="first_name"]').val(),
+      last_name: $('input[name="last_name"]').val(),
+      email: $('input[name="email"]').val(),
+      role: $('select[name="role"]').val(),
+      status: $('select[name="status"]').val()
+    };
+    
+    $.ajax({
+      url: '/robop/api/users',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(formData),
+      success: function(response) {
+        if (response.success) {
+          $('#addUserModal').modal('hide');
+          showStatus('User added successfully!', 'success');
+          setTimeout(() => location.reload(), 1000); // 1秒后刷新页面
+        } else {
+          showStatus('Error: ' + response.error, 'danger');
+        }
+      },
+      error: function(xhr) {
+        showStatus('Error adding user: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
+      }
+    });
+  });
+  
+  // 删除用户
+  $(document).on('click', '.delete-btn', function() {
+    if (!isEditMode) return;
+    
+    const userId = $(this).data('id');
+    const userName = $(this).closest('tr').find('td:nth-child(3)').text() + ' ' + 
+                     $(this).closest('tr').find('td:nth-child(4)').text();
+    
+    if (confirm(`Are you sure you want to delete user: ${userName}?`)) {
+      $.ajax({
+        url: `/robop/api/users/${userId}`,
+        method: 'DELETE',
+        success: function(response) {
+          if (response.success) {
+            showStatus('User deleted successfully!', 'success');
+            setTimeout(() => location.reload(), 1000); // 1秒后刷新页面
+          } else {
+            showStatus('Error: ' + response.error, 'danger');
+          }
+        },
+        error: function(xhr) {
+          showStatus('Error deleting user: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
+        }
+      });
+    }
+  });
+});
 </script>
 
 {% endblock %}
