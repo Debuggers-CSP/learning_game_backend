@@ -14,8 +14,17 @@
         <th>Last</th>
         <th>Created</th>
         <th>Last Login</th>
+
+        <!-- NEW badge columns -->
+        <th>Badge Count</th>
+        <th>Best Badge</th>
+        <th>Best Score</th>
+        <th>Best Sector</th>
+        <th>Last Badge</th>
+        <th>Last Earned</th>
       </tr>
     </thead>
+
     <tbody>
       {% for u in robop_user_data %}
       <tr id="robop-user-{{ u.id }}">
@@ -25,6 +34,14 @@
         <td>{{ u.last_name }}</td>
         <td>{{ u.created or "—" }}</td>
         <td>{{ u.last_login or "—" }}</td>
+
+        <!-- NEW badge data -->
+        <td>{{ u.badge_count or 0 }}</td>
+        <td>{{ u.best_badge or "—" }}</td>
+        <td>{{ u.best_score or "—" }}</td>
+        <td>{{ u.best_sector or "—" }}</td>
+        <td>{{ u.last_badge or "—" }}</td>
+        <td>{{ u.last_earned or "—" }}</td>
       </tr>
       {% endfor %}
     </tbody>

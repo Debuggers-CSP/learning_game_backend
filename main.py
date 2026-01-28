@@ -47,7 +47,7 @@ from model.post import Post, init_posts
 from model.microblog import MicroBlog, Topic, initMicroblogs
 from hacks.jokes import initJokes 
 from api.robop_api import robop_api
-from model.robop_user import RobopUser, initRobopUsers
+from model.robop_user import RobopUser, UserBadge, initRobopUsers
 
 # from model.announcement import Announcement ##temporary revert
 
@@ -174,6 +174,28 @@ def robop_users():
 
     robop_user_data = []
     for u in users:
+        # pull all badges for this user once
+        badges = (
+            UserBadge.query
+            .filter_by(user_id=u.id)
+            .order_by(UserBadge._date_earned.desc())
+            .all()
+        )
+
+        badge_count = len(badges)
+
+        # "best" badge = highest score (tie-breaker: most recently earned)
+        best_badge = None
+        if badges:
+            best_badge = sorted(
+                badges,
+                key=lambda b: (b._score, b._date_earned),
+                reverse=True
+            )[0]
+
+        # last earned badge (most recent by date)
+        last_earned = badges[0] if badges else None
+
         robop_user_data.append({
             "id": u.id,
             "uid": u.uid,
@@ -181,9 +203,18 @@ def robop_users():
             "last_name": u.last_name,
             "created": u._created.isoformat() if getattr(u, "_created", None) else None,
             "last_login": u._last_login.isoformat() if getattr(u, "_last_login", None) else None,
+
+            # NEW badge fields
+            "badge_count": badge_count,
+            "best_badge": best_badge._badge_name if best_badge else None,
+            "best_score": best_badge._score if best_badge else None,
+            "best_sector": best_badge._sector_id if best_badge else None,
+            "last_badge": last_earned._badge_name if last_earned else None,
+            "last_earned": last_earned._date_earned.isoformat() if last_earned else None,
         })
 
     return render_template("robop_users.html", robop_user_data=robop_user_data)
+
 
 # Helper function to extract uploads for a user (ie PFP image)
 @app.route('/uploads/<path:filename>')
