@@ -30,14 +30,27 @@ class RobopUser(db.Model):
     @property
     def uid(self):
         return self._uid
-
+    
+    @uid.setter
+    def uid(self, value):
+        self._uid = value
+    
     @property
     def first_name(self):
         return self._first_name
-
+    
+    @first_name.setter
+    def first_name(self, value):
+        self._first_name = value
+    
     @property
     def last_name(self):
         return self._last_name
+    
+    @last_name.setter
+    def last_name(self, value):
+        self._last_name = value
+
 
     def is_password(self, password):
         return check_password_hash(self._password, password)
