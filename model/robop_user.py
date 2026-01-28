@@ -4,7 +4,7 @@ from __init__ import app, db
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
-
+from random import randint, choice
 
 class RobopUser(db.Model):
     __tablename__ = "RobopUser"
@@ -152,3 +152,42 @@ def initRobopUsers():
         except Exception as e:
             db.session.rollback()
             print(f"⚠️ RobopUser init error: {e}")
+        
+        # Seed test users
+        test_users = [
+            RobopUser(uid="alice", first_name="Alice", last_name="Test", password="pass"),
+            RobopUser(uid="bob", first_name="Bob", last_name="Test", password="pass"),
+            RobopUser(uid="charlie", first_name="Charlie", last_name="Test", password="pass"),
+        ]
+
+        for u in test_users:
+            if not RobopUser.query.filter_by(_uid=u.uid).first():
+                db.session.add(u)
+
+        db.session.commit()
+
+        # Seed badges for those same users
+        if not UserBadge.query.first():
+            thresholds = BadgeThreshold.query.all()
+
+            for user in RobopUser.query.filter(
+                RobopUser._uid.in_(["alice", "bob", "charlie"])
+            ).all():
+
+                for sector in range(1, 4):
+                    score = randint(50, 100)
+                    badge = max(
+                        thresholds,
+                        key=lambda t: score >= t._threshold
+                    )._name
+
+                    db.session.add(
+                        UserBadge(
+                            user_id=user.id,   # ← integer FK
+                            sector_id=sector,
+                            score=score,
+                            badge_name=badge
+                        )
+                    )
+
+            db.session.commit()
