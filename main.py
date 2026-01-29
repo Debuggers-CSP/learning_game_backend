@@ -444,6 +444,50 @@ def delete_user_kasm(user_id):
     except requests.RequestException as e:
         return {'message': 'Error connecting to KASM API', 'error': str(e)}, 500
 
+# ==================== BADGE EDIT API  ====================
+
+@app.route("/robop/api/users/<int:user_id>/update_badge", methods=["PUT"])
+def update_user_badge_info(user_id):
+    """API to update user's badge information (direct update of best/last badges)"""
+    try:
+        user = RobopUser.query.get(user_id)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+        
+        data = request.get_json()
+        print(f"Updating badge info for user {user_id}: {data}")
+        
+        badges = UserBadge.query.filter_by(user_id=user_id).order_by(UserBadge._date_earned.desc()).all()
+        
+        if not badges:
+            return jsonify({"success": False, "error": "No badges found for this user"}), 404
+        
+        if 'best_badge' in data or 'best_score' in data or 'best_sector' in data:
+            best_badge = sorted(
+                badges,
+                key=lambda b: (b._score, b._date_earned),
+                reverse=True
+            )[0]
+            
+            if 'best_badge' in data:
+                best_badge._badge_name = data['best_badge']
+            if 'best_score' in data:
+                best_badge._score = int(data['best_score'])
+            if 'best_sector' in data:
+                best_badge._sector_id = int(data['best_sector'])
+        
+        if 'last_badge' in data:
+            last_badge = badges[0]  # 已经按时间倒序排列
+            last_badge._badge_name = data['last_badge']
+        
+        db.session.commit()
+        return jsonify({"success": True, "message": "Badge information updated successfully"})
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERROR updating badge info: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
 
 @app.route('/update_user/<string:uid>', methods=['PUT'])
 def update_user(uid):

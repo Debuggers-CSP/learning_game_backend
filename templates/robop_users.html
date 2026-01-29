@@ -77,12 +77,12 @@
         <td>{{ u.created or "—" }}</td>
         <td>{{ u.last_login or "—" }}</td>
 
-        <!-- NEW badge data -->
+        <!-- NEW badge data - need to add editable class -->
         <td>{{ u.badge_count or 0 }}</td>
-        <td>{{ u.best_badge or "—" }}</td>
-        <td>{{ u.best_score or "—" }}</td>
-        <td>{{ u.best_sector or "—" }}</td>
-        <td>{{ u.last_badge or "—" }}</td>
+        <td class="editable" data-field="best_badge">{{ u.best_badge or "—" }}</td>
+        <td class="editable" data-field="best_score">{{ u.best_score or "—" }}</td>
+        <td class="editable" data-field="best_sector">{{ u.best_sector or "—" }}</td>
+        <td class="editable" data-field="last_badge">{{ u.last_badge or "—" }}</td>
         <td>{{ u.last_earned or "—" }}</td>
         <td class="action-cell">
           <button class="btn btn-sm btn-danger delete-btn" data-id="{{ u.id }}">
@@ -95,7 +95,7 @@
   </table>
 </div>
 
-<!-- 添加用户模态框 -->
+<!-- Add User Modal -->
 <div class="modal fade" id="addUserModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -147,7 +147,7 @@
   </div>
 </div>
 
-<!-- 添加必要的CSS和JS -->
+<!-- Add necessary CSS and JS -->
 <style>
   .editable {
     cursor: pointer;
@@ -175,6 +175,7 @@
   #saveStatus {
     transition: all 0.3s ease;
   }
+  
 </style>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -187,45 +188,45 @@ $(document).ready(function() {
   let isEditMode = false;
   let table = null;
   
-  // 初始化DataTable
+  // Initialize DataTable
   table = $('#robopUserTable').DataTable({
     pageLength: 25,
     responsive: true
   });
   
-  // 切换编辑模式
+  // Toggle edit mode
   $('#toggleEditBtn').click(function() {
     isEditMode = !isEditMode;
     
     if (isEditMode) {
-      // 进入编辑模式
+      // Enter edit mode
       $('#editBtnText').text('Disable Edit Mode');
       $('#toggleEditBtn').removeClass('btn-primary').addClass('btn-warning');
       $('#editModeAlert').removeClass('d-none');
       $('body').addClass('edit-mode');
-      // 显示添加用户按钮
+      // Show add user button
       if (!$('#addUserBtn').length) {
         $('#toggleEditBtn').after(
           '<button id="addUserBtn" class="btn btn-success me-2"><i class="bi bi-person-plus"></i> Add User</button>'
         );
       }
     } else {
-      // 退出编辑模式
+      // Exit edit mode
       $('#editBtnText').text('Enable Edit Mode');
       $('#toggleEditBtn').removeClass('btn-warning').addClass('btn-primary');
       $('#editModeAlert').addClass('d-none');
       $('body').removeClass('edit-mode');
-      // 移除添加用户按钮
+      // Remove add user button
       $('#addUserBtn').remove();
     }
   });
   
-  // 刷新按钮
+  // Refresh button
   $('#refreshBtn').click(function() {
     location.reload();
   });
   
-  // 点击单元格编辑
+  // ==================== Modified: Click cell to edit ====================
   $(document).on('click', '.editable', function() {
     if (!isEditMode) return;
     
@@ -236,12 +237,12 @@ $(document).ready(function() {
     const field = $cell.data('field');
     const userId = $cell.closest('tr').data('id');
     
-    // 保存原始值
+    // Save original value
     $cell.data('original', originalContent);
     
-    // 根据字段类型创建不同的编辑器
+    // Create different editors based on field type
     if (field === 'role' || field === 'status') {
-      // 下拉选择器
+      // Dropdown selector
       const currentValue = $cell.find('.badge').text().trim().toLowerCase() || 
                           (field === 'role' ? 'user' : 'active');
       let options = '';
@@ -263,16 +264,42 @@ $(document).ready(function() {
       $cell.html(`<select class="form-select form-select-sm editable-select" data-field="${field}" data-id="${userId}">${options}</select>`)
            .addClass('editing');
       $cell.find('select').focus();
-    } else {
-      // 文本输入框
-      const currentValue = $cell.text().trim();
-      $cell.html(`<input type="text" class="editable-input" value="${currentValue}" data-field="${field}" data-id="${userId}">`)
+    } 
+    // Badge name fields (best_badge, last_badge)
+    else if (field === 'best_badge' || field === 'last_badge') {
+      const badgeOptions = ['Gold', 'Silver', 'Bronze', 'Participant', '—'];
+      let options = '';
+      
+      badgeOptions.forEach(badge => {
+        const selected = originalContent === badge ? 'selected' : '';
+        options += `<option value="${badge}" ${selected}>${badge}</option>`;
+      });
+      
+      $cell.html(`<select class="form-select form-select-sm editable-select" data-field="${field}" data-id="${userId}">${options}</select>`)
+           .addClass('editing');
+      $cell.find('select').focus();
+    }
+    // Score field
+    else if (field === 'best_score') {
+      $cell.html(`<input type="number" min="0" max="100" class="editable-input" value="${originalContent}" data-field="${field}" data-id="${userId}">`)
+           .addClass('editing');
+      $cell.find('input').focus().select();
+    }
+    // Sector field
+    else if (field === 'best_sector') {
+      $cell.html(`<input type="number" min="1" max="10" class="editable-input" value="${originalContent}" data-field="${field}" data-id="${userId}">`)
+           .addClass('editing');
+      $cell.find('input').focus().select();
+    }
+    // Regular text fields
+    else {
+      $cell.html(`<input type="text" class="editable-input" value="${originalContent}" data-field="${field}" data-id="${userId}">`)
            .addClass('editing');
       $cell.find('input').focus().select();
     }
   });
   
-  // 保存编辑（Enter键或失去焦点）
+  // ==================== Modified: Save edit (Enter key or blur) ====================
   $(document).on('keydown blur', '.editable-input', function(e) {
     if (e.type === 'keydown' && e.which !== 13) return;
     
@@ -284,14 +311,20 @@ $(document).ready(function() {
     const userId = $input.data('id');
     
     if (newValue !== originalContent && newValue !== '') {
-      updateUser(userId, field, newValue, $cell);
+      // Check if it's a badge field
+      const badgeFields = ['best_badge', 'best_score', 'best_sector', 'last_badge'];
+      if (badgeFields.includes(field)) {
+        updateBadgeInfo(userId, field, newValue, $cell);
+      } else {
+        updateUser(userId, field, newValue, $cell);
+      }
     } else {
-      // 恢复原始内容
+      // Restore original content
       $cell.html(originalContent).removeClass('editing');
     }
   });
   
-  // 保存下拉选择
+  // ==================== Modified: Save dropdown selection ====================
   $(document).on('change blur', '.editable-select', function() {
     const $select = $(this);
     const newValue = $select.val();
@@ -301,13 +334,19 @@ $(document).ready(function() {
     const userId = $select.data('id');
     
     if (newValue !== originalContent) {
-      updateUser(userId, field, newValue, $cell);
+      // Check if it's a badge field
+      const badgeFields = ['best_badge', 'best_score', 'best_sector', 'last_badge'];
+      if (badgeFields.includes(field)) {
+        updateBadgeInfo(userId, field, newValue, $cell);
+      } else {
+        updateUser(userId, field, newValue, $cell);
+      }
     } else {
       $cell.html(originalContent).removeClass('editing');
     }
   });
   
-  // 取消编辑（Esc键）
+  // Cancel edit (Esc key)
   $(document).on('keydown', '.editable-input, .editable-select', function(e) {
     if (e.keyCode === 27) {
       const $input = $(this);
@@ -317,7 +356,52 @@ $(document).ready(function() {
     }
   });
   
-  // 更新用户API调用
+  // ==================== New: Badge update function ====================
+  function updateBadgeInfo(userId, field, value, $cell) {
+    const data = {};
+    data[field] = value;
+    
+    console.log(`Updating badge info - User ID: ${userId}, Field: ${field}, Value: ${value}`);
+    showStatus('Saving badge...', 'info');
+    
+    $.ajax({
+      url: `/robop/api/users/${userId}/update_badge`,
+      method: 'PUT',
+      contentType: 'application/json',
+      data: JSON.stringify(data),
+      success: function(response) {
+        console.log('Badge update response:', response);
+        if (response.success) {
+          showStatus('Badge updated successfully!', 'success');
+          $cell.text(value);
+        } else {
+          showStatus('Error: ' + response.error, 'danger');
+          $cell.html($cell.data('original'));
+        }
+        $cell.removeClass('editing');
+      },
+      error: function(xhr, status, error) {
+        console.error('Badge update error:', {
+          status: xhr.status,
+          statusText: xhr.statusText,
+          responseText: xhr.responseText,
+          error: error
+        });
+        
+        let errorMsg = 'Error saving badge: ';
+        if (xhr.responseJSON && xhr.responseJSON.error) {
+          errorMsg += xhr.responseJSON.error;
+        } else {
+          errorMsg += xhr.statusText || 'Unknown error';
+        }
+        
+        showStatus(errorMsg, 'danger');
+        $cell.html($cell.data('original')).removeClass('editing');
+      }
+    });
+  }
+  
+  // ==================== Original user update function ====================
   function updateUser(userId, field, value, $cell) {
     const data = {};
     data[field] = value;
@@ -333,7 +417,7 @@ $(document).ready(function() {
         if (response.success) {
           showStatus('Saved successfully!', 'success');
           
-          // 更新单元格显示
+          // Update cell display
           if (field === 'role' || field === 'status') {
             const badgeClass = field === 'role' ? 
               (value === 'admin' ? 'danger' : value === 'moderator' ? 'warning' : 'secondary') :
@@ -344,18 +428,18 @@ $(document).ready(function() {
           }
         } else {
           showStatus('Error: ' + response.error, 'danger');
-          $cell.html($cell.data('original')); // 恢复原始内容
+          $cell.html($cell.data('original'));
         }
         $cell.removeClass('editing');
       },
       error: function(xhr) {
-        showStatus('Error saving: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
+        showStatus('Save error: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
         $cell.html($cell.data('original')).removeClass('editing');
       }
     });
   }
   
-  // 显示状态信息
+  // Show status message
   function showStatus(message, type) {
     const $status = $('#saveStatus');
     $status.removeClass('d-none alert-info alert-success alert-danger')
@@ -369,13 +453,13 @@ $(document).ready(function() {
     }
   }
   
-  // 添加用户按钮
+  // Add user button
   $(document).on('click', '#addUserBtn', function() {
     $('#addUserForm')[0].reset();
     $('#addUserModal').modal('show');
   });
   
-  // 保存新用户
+  // Save new user
   $('#saveNewUserBtn').click(function() {
     const formData = {
       uid: $('input[name="uid"]').val(),
@@ -395,18 +479,18 @@ $(document).ready(function() {
         if (response.success) {
           $('#addUserModal').modal('hide');
           showStatus('User added successfully!', 'success');
-          setTimeout(() => location.reload(), 1000); // 1秒后刷新页面
+          setTimeout(() => location.reload(), 1000);
         } else {
           showStatus('Error: ' + response.error, 'danger');
         }
       },
       error: function(xhr) {
-        showStatus('Error adding user: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
+        showStatus('Add user error: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
       }
     });
   });
   
-  // 删除用户
+  // Delete user
   $(document).on('click', '.delete-btn', function() {
     if (!isEditMode) return;
     
@@ -421,13 +505,13 @@ $(document).ready(function() {
         success: function(response) {
           if (response.success) {
             showStatus('User deleted successfully!', 'success');
-            setTimeout(() => location.reload(), 1000); // 1秒后刷新页面
+            setTimeout(() => location.reload(), 1000);
           } else {
             showStatus('Error: ' + response.error, 'danger');
           }
         },
         error: function(xhr) {
-          showStatus('Error deleting user: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
+          showStatus('Delete user error: ' + (xhr.responseJSON?.error || 'Unknown error'), 'danger');
         }
       });
     }
