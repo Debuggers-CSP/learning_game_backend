@@ -48,6 +48,8 @@ from model.microblog import MicroBlog, Topic, initMicroblogs
 from hacks.jokes import initJokes 
 from api.robop_api import robop_api
 from model.robop_user import RobopUser, UserBadge, initRobopUsers
+from api.endgame_api import endgame_api
+from model.endgame import init_endgame_data
 
 # from model.announcement import Announcement ##temporary revert
 
@@ -86,12 +88,14 @@ app.register_blueprint(data_export_import_api)  # Register the data export/impor
 app.register_blueprint(joke_api)  # Register the joke API blueprint
 app.register_blueprint(post_api)  # Register the social media post API
 app.register_blueprint(robop_api)
+app.register_blueprint(endgame_api)
 # app.register_blueprint(announcement_api) ##temporary revert
 
 # Jokes file initialization
 with app.app_context():
     initJokes()
     initRobopUsers()
+    init_endgame_data()
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
@@ -147,6 +151,11 @@ def page_not_found(e):
 def index():
     print("Home:", current_user)
     return render_template("index.html")
+
+
+@app.route('/ending/<int:player_id>')
+def ending_page(player_id):
+    return render_template("ending.html", player_id=player_id)
 
 
 
