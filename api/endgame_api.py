@@ -131,6 +131,16 @@ def _grade_final_answer(answer: str) -> dict:
     return result or _fallback_grade(answer)
 
 
+def _get_earned_badges(player_id: int) -> list:
+    badge_rows = (
+        PlayerBadge.query
+        .filter_by(player_id=player_id)
+        .order_by(PlayerBadge.timestamp.asc())
+        .all()
+    )
+    return [row.to_dict() for row in badge_rows]
+
+
 @endgame_api.route("/player/<int:player_id>/score", methods=["GET"])
 def get_player_score(player_id):
     player = Player.query.get(player_id)
@@ -233,6 +243,39 @@ def final_check_frontend():
         db.session.commit()
 
     return jsonify(result), 200
+
+
+@endgame_api.route("/player/<int:player_id>/final-badge", methods=["POST"])
+def award_final_badge(player_id):
+    player = Player.query.get(player_id)
+    if not player:
+        return jsonify({"success": False, "message": "Player not found"}), 404
+
+    if not player.final_correct:
+        return jsonify({"success": False, "message": "Final answer not correct"}), 400
+
+    badge = Badge.query.filter_by(badge_name="Master").first()
+    if not badge:
+        badge = Badge(badge_name="Master")
+        db.session.add(badge)
+        db.session.commit()
+
+    existing = PlayerBadge.query.filter_by(player_id=player_id, badge_id=badge.id).first()
+    if not existing:
+        attempts_value = player.final_attempts if player.final_attempts is not None else 0
+        final_badge_row = PlayerBadge(
+            player_id=player.id,
+            badge_id=badge.id,
+            attempts=attempts_value,
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(final_badge_row)
+        db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "earned_badges": _get_earned_badges(player_id)
+    }), 200
 
 
 @endgame_api.route("/player/<int:player_id>/complete", methods=["POST"])
