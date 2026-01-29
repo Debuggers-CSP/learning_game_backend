@@ -1,0 +1,268 @@
+{% extends "layouts/base.html" %}
+
+{% block head %}
+<title>Ending Page</title>
+{% endblock %}
+
+{% block style %}
+<style>
+    .ending-container {
+        max-width: 1100px;
+        margin: 30px auto;
+        padding: 24px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 16px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+    }
+    .badge-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #f5f5f7;
+        border: 1px solid #e0e0e0;
+        border-radius: 999px;
+        padding: 6px 14px;
+        margin: 6px;
+        font-weight: 600;
+    }
+    .code-box {
+        background: #0b1020;
+        color: #d4d7ff;
+        border-radius: 12px;
+        padding: 16px;
+    }
+    .status-pill {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .status-ok {
+        background: #d1fae5;
+        color: #065f46;
+    }
+    .status-bad {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="ending-container">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Maze Complete</h2>
+            <div class="text-muted">Player ID: {{ player_id }}</div>
+        </div>
+        <div id="completionStatus" class="status-pill status-bad">Not Completed</div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Final Score Summary</h5>
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="text-muted">Final Attempts</div>
+                            <div id="finalAttempts" class="h4">-</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted">Final Badge</div>
+                            <div id="finalBadge" class="h4">-</div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="text-muted">Completed At</div>
+                        <div id="completedAt">-</div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="text-muted">Final Answer Correct</div>
+                        <div id="finalCorrect">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Earned Badges</h5>
+                    <div id="badgeList" class="mt-2">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Attempts & Timestamps</h5>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Badge</th>
+                                    <th>Attempts</th>
+                                    <th>Timestamp</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attemptsTable">
+                                <tr><td colspan="3">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Final Code Answer</h5>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Final Attempts</label>
+                            <input id="finalAttemptsInput" type="number" class="form-control" min="0" placeholder="e.g. 3">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Final Badge Name</label>
+                            <input id="finalBadgeInput" type="text" class="form-control" placeholder="e.g. Champion">
+                        </div>
+                    </div>
+                    <textarea id="finalAnswer" class="form-control" rows="6" placeholder="Paste your final code here..."></textarea>
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <button id="checkAnswer" class="btn btn-primary">Check Answer</button>
+                        <button id="saveCompletion" class="btn btn-success">Save Completion</button>
+                        <div id="checkStatus" class="ms-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const playerId = {{ player_id }};
+
+    const badgeList = document.getElementById("badgeList");
+    const attemptsTable = document.getElementById("attemptsTable");
+    const completionStatus = document.getElementById("completionStatus");
+
+    const finalAttempts = document.getElementById("finalAttempts");
+    const finalBadge = document.getElementById("finalBadge");
+    const completedAt = document.getElementById("completedAt");
+    const finalCorrect = document.getElementById("finalCorrect");
+
+    const finalAnswerInput = document.getElementById("finalAnswer");
+    const finalAttemptsInput = document.getElementById("finalAttemptsInput");
+    const finalBadgeInput = document.getElementById("finalBadgeInput");
+    const checkAnswerBtn = document.getElementById("checkAnswer");
+    const saveCompletionBtn = document.getElementById("saveCompletion");
+    const checkStatus = document.getElementById("checkStatus");
+
+    function formatTimestamp(ts) {
+        if (!ts) return "-";
+        const date = new Date(ts);
+        return date.toLocaleString();
+    }
+
+    function renderScore(data) {
+        const earnedBadges = data.earned_badges || [];
+        badgeList.innerHTML = earnedBadges.length
+            ? earnedBadges.map(b => `<span class="badge-pill">🏅 ${b.badge_name}</span>`).join("")
+            : "No badges earned yet.";
+
+        attemptsTable.innerHTML = earnedBadges.length
+            ? earnedBadges.map(b => `
+                <tr>
+                    <td>${b.badge_name || "-"}</td>
+                    <td>${b.attempts}</td>
+                    <td>${formatTimestamp(b.timestamp)}</td>
+                </tr>
+            `).join("")
+            : '<tr><td colspan="3">No attempts logged yet.</td></tr>';
+
+        const finalData = data.final || {};
+        finalAttempts.textContent = finalData.final_attempts ?? "-";
+        finalBadge.textContent = finalData.final_badge?.badge_name || "-";
+        completedAt.textContent = formatTimestamp(finalData.completed_at);
+        finalCorrect.textContent = typeof finalData.final_correct === "boolean"
+            ? (finalData.final_correct ? "Yes" : "No")
+            : "-";
+
+        if (finalAttemptsInput && finalData.final_attempts !== null && finalData.final_attempts !== undefined) {
+            finalAttemptsInput.value = finalData.final_attempts;
+        }
+        if (finalBadgeInput && finalData.final_badge?.badge_name) {
+            finalBadgeInput.value = finalData.final_badge.badge_name;
+        }
+
+        if (data.completion_status) {
+            completionStatus.textContent = "Completed";
+            completionStatus.classList.remove("status-bad");
+            completionStatus.classList.add("status-ok");
+        } else {
+            completionStatus.textContent = "Not Completed";
+            completionStatus.classList.remove("status-ok");
+            completionStatus.classList.add("status-bad");
+        }
+    }
+
+    async function loadScore() {
+        const response = await fetch(`/player/${playerId}/score`);
+        const data = await response.json();
+        if (data.success) {
+            renderScore(data);
+        }
+    }
+
+    checkAnswerBtn.addEventListener("click", async () => {
+        checkStatus.textContent = "Checking...";
+        const response = await fetch(`/player/${playerId}/final-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ answer: finalAnswerInput.value })
+        });
+        const data = await response.json();
+        if (data.correct) {
+            checkStatus.textContent = "✅ Correct answer";
+        } else {
+            checkStatus.textContent = "❌ Incorrect answer";
+        }
+        await loadScore();
+    });
+
+    saveCompletionBtn.addEventListener("click", async () => {
+        checkStatus.textContent = "Saving...";
+        const attemptsValue = Number(finalAttemptsInput.value);
+        const badgeName = finalBadgeInput.value.trim();
+        if (!Number.isFinite(attemptsValue)) {
+            checkStatus.textContent = "Enter a valid attempts count";
+            return;
+        }
+        if (!badgeName) {
+            checkStatus.textContent = "Enter a badge name";
+            return;
+        }
+        const response = await fetch(`/player/${playerId}/complete`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                attempts: attemptsValue,
+                badge_name: badgeName,
+                timestamp: new Date().toISOString()
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            checkStatus.textContent = "✅ Completion saved";
+        } else {
+            checkStatus.textContent = data.message || "Error saving completion";
+        }
+        await loadScore();
+    });
+
+    loadScore();
+</script>
+{% endblock %}

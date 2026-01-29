@@ -121,6 +121,9 @@ app.config['GITHUB_TARGET_NAME'] = os.environ.get('GITHUB_TARGET_NAME') or 'open
 app.config['GEMINI_SERVER'] = os.environ.get('GEMINI_SERVER') or 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
 app.config['GEMINI_API_KEY'] = os.environ.get('GEMINI_API_KEY') or None
 
+# Endgame settings
+app.config['FINAL_CODE_ANSWER'] = os.environ.get('FINAL_CODE_ANSWER') or ''
+
 
 # KASM settings
 app.config['KASM_SERVER'] = os.environ.get('KASM_SERVER') or 'https://kasm.opencodingsociety.com'
