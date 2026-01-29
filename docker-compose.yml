@@ -5,6 +5,9 @@ services:
                       build: .
                       env_file:
                               - .env
+                      environment:
+                              GEMINI_API_KEY: ${GEMINI_API_KEY}
+                              GEMINI_SERVER: ${GEMINI_SERVER}
                       ports:
                               - "8320:8320"
                       volumes:

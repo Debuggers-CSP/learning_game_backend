@@ -1,5 +1,8 @@
 from datetime import datetime
+import json
+import re
 
+import requests
 from flask import Blueprint, jsonify, request, current_app
 
 from __init__ import db
@@ -23,6 +26,109 @@ def _parse_iso(ts):
         return datetime.fromisoformat(ts)
     except ValueError:
         return None
+
+
+def _extract_json(text: str) -> dict:
+    if not text:
+        return {}
+    text = text.strip()
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {}
+    match = re.search(r"\{[\s\S]*\}", text)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _fallback_grade(answer: str) -> dict:
+    expected = current_app.config.get("FINAL_CODE_ANSWER", "")
+    normalized_answer = _normalize_answer(answer)
+    normalized_expected = _normalize_answer(expected)
+    correct = bool(normalized_expected) and normalized_answer == normalized_expected
+    if correct:
+        return {"correct": True, "message": "Correct", "steps": []}
+    return {
+        "correct": False,
+        "message": "Unable to verify correctness. Please review and retry.",
+        "steps": [
+            "Re-check the problem requirements and expected output.",
+            "Compare your solution structure with the expected approach.",
+            "Fix any syntax or logic errors, then try again."
+        ]
+    }
+
+
+def _grade_final_answer(answer: str) -> dict:
+    api_key = current_app.config.get("GEMINI_API_KEY")
+    server = current_app.config.get("GEMINI_SERVER")
+
+    result = None
+    if api_key and server:
+        prompt = (
+            "You are grading a student's final code answer. "
+            "Return ONLY valid JSON with this schema: "
+            "{\"verdict\":\"Correct\"|\"Incorrect\",\"explanation\":string,\"steps\":string[]}\n"
+            "If verdict is Correct, explanation should be 'Correct' and steps must be an empty array. "
+            "If verdict is Incorrect, provide a short explanation and 3-6 numbered fix steps as strings."
+        )
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": f"{prompt}\n\nStudent answer:\n{answer}" 
+                        }
+                    ]
+                }
+            ]
+        }
+
+        try:
+            response = requests.post(
+                f"{server}?key={api_key}",
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=10
+            )
+            if response.status_code == 200:
+                gemini_json = response.json()
+                gemini_text = ""
+                try:
+                    gemini_text = gemini_json["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError):
+                    gemini_text = ""
+
+                parsed = _extract_json(gemini_text)
+                verdict = (parsed.get("verdict") or "").strip().lower()
+                explanation = (parsed.get("explanation") or "").strip()
+                steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
+
+                if verdict in {"correct", "incorrect"}:
+                    correct = verdict == "correct"
+                    if correct:
+                        result = {"correct": True, "message": "Correct", "steps": []}
+                    else:
+                        cleaned_steps = [str(step).strip() for step in steps if str(step).strip()]
+                        result = {
+                            "correct": False,
+                            "message": explanation or "Incorrect",
+                            "steps": cleaned_steps[:6] if cleaned_steps else [
+                                "Identify the incorrect logic or missing edge cases.",
+                                "Adjust the algorithm to match required behavior.",
+                                "Re-test with sample inputs and refine."
+                            ]
+                        }
+        except requests.RequestException:
+            result = None
+
+    return result or _fallback_grade(answer)
 
 
 @endgame_api.route("/player/<int:player_id>/score", methods=["GET"])
@@ -77,18 +183,56 @@ def final_check(player_id):
         return jsonify({"success": False, "message": "Player not found"}), 404
 
     data = _get_json()
-    answer = data.get("answer", "")
+    body_player_id = data.get("playerId")
+    if body_player_id is not None and int(body_player_id) != int(player_id):
+        return jsonify({"correct": False, "message": "playerId mismatch", "steps": []}), 400
 
-    expected = current_app.config.get("FINAL_CODE_ANSWER", "")
-    normalized_answer = _normalize_answer(answer)
-    normalized_expected = _normalize_answer(expected)
-    correct = bool(normalized_expected) and normalized_answer == normalized_expected
+    answer = (data.get("answer") or "").strip()
+    if not answer:
+        return jsonify({"correct": False, "message": "Answer is required", "steps": []}), 400
+
+    max_len = 2000
+    if len(answer) > max_len:
+        answer = answer[:max_len]
+
+    result = _grade_final_answer(answer)
 
     player.final_answer = answer
-    player.final_correct = correct
+    player.final_correct = result["correct"]
     db.session.commit()
 
-    return jsonify({"correct": correct}), 200
+    return jsonify(result), 200
+
+
+@endgame_api.route("/api/endgame/final-check", methods=["POST"])
+def final_check_frontend():
+    data = _get_json()
+    answer = (data.get("answer") or "").strip()
+    if not answer:
+        return jsonify({"correct": False, "message": "Answer is required", "steps": []}), 400
+
+    max_len = 2000
+    if len(answer) > max_len:
+        answer = answer[:max_len]
+
+    player_id = data.get("playerId")
+    player = None
+    if player_id is not None:
+        try:
+            player = Player.query.get(int(player_id))
+        except (TypeError, ValueError):
+            return jsonify({"correct": False, "message": "Invalid playerId", "steps": []}), 400
+        if not player:
+            return jsonify({"correct": False, "message": "Player not found", "steps": []}), 404
+
+    result = _grade_final_answer(answer)
+
+    if player:
+        player.final_answer = answer
+        player.final_correct = result["correct"]
+        db.session.commit()
+
+    return jsonify(result), 200
 
 
 @endgame_api.route("/player/<int:player_id>/complete", methods=["POST"])
