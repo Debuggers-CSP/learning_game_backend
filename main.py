@@ -30,6 +30,9 @@ from api.data_export_import_api import data_export_import_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from api.post import post_api  # Import the social media post API
 #from api.announcement import announcement_api ##temporary revert
+from api.pseudocode_bank_api import pseudocode_bank_api
+from model.pseudocode_bank import initPseudocodeQuestionBank
+
 
 # database Initialization functions
 from model.user import User, initUsers
@@ -90,12 +93,15 @@ app.register_blueprint(post_api)  # Register the social media post API
 app.register_blueprint(robop_api)
 app.register_blueprint(endgame_api)
 # app.register_blueprint(announcement_api) ##temporary revert
+app.register_blueprint(pseudocode_bank_api)
+
 
 # Jokes file initialization
 with app.app_context():
     initJokes()
     initRobopUsers()
     init_endgame_data()
+    initPseudocodeQuestionBank()
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
