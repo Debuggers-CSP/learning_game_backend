@@ -1,8 +1,10 @@
 # api/robop_api.py
 
 from flask import Blueprint, request, jsonify, session
-from model.robop_user import RobopUser, BadgeThreshold, UserBadge
+from model.robop_user import RobopUser, BadgeThreshold, UserBadge, StationHint
 from datetime import datetime
+import requests
+import json
 
 from __init__ import db
 
@@ -244,3 +246,163 @@ def autofill_answer():
         "sector_id": sector_id,
         "question_num": question_num
     }), 200
+
+
+# --- NEW: AI HINT GENERATION FUNCTIONS ---
+
+def call_ai_api(question_text):
+    """Calls an AI API to generate hints for a given question."""
+    # IMPORTANT: Replace with your actual API key
+    api_key = "YOUR API KEY HERE"
+    
+    # You can choose between Groq or OpenAI
+    # Option 1: Groq API
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    
+    # Logic: Ask AI to help with the specific question
+    prompt = f"Provide a list of 3 short hints for the following programming question. Each hint should be a single concise sentence. Return ONLY a JSON array of strings, nothing else.\n\nQuestion: {question_text}"
+    
+    try:
+        response = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "llama3-8b-8192",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": 150
+            },
+            timeout=10  # Timeout after 10 seconds
+        )
+        
+        if response.status_code != 200:
+            # Fallback to mock hints if API fails
+            return ["Think about the steps needed to solve this problem.", 
+                   "Consider edge cases in your solution.", 
+                   "Review similar examples you've seen before."]
+        
+        # Try to parse the response as JSON
+        content = response.json()["choices"][0]["message"]["content"].strip()
+        
+        # Clean up the response (sometimes LLMs add extra text)
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        
+        # Parse the JSON list
+        hints = json.loads(content)
+        
+        # Ensure we have exactly 3 hints
+        if isinstance(hints, list) and len(hints) >= 3:
+            return hints[:3]
+        else:
+            # Fallback
+            return ["Break the problem into smaller parts.", 
+                   "Think about the expected output format.", 
+                   "Try to explain the solution in your own words first."]
+    
+    except Exception as e:
+        # If API call fails, return default hints
+        print(f"AI API Error: {e}")
+        return ["Consider the input requirements.", 
+               "Think about the algorithm steps.", 
+               "Test your solution with sample inputs."]
+
+
+# --- NEW: GET HINT ENDPOINT (USING SELECTION) ---
+
+@robop_api.route("/get_hint", methods=["POST"])
+def get_hint():
+    """
+    Uses SELECTION (if/else) to decide whether to fetch from DB or trigger AI.
+    Request body: { "module_key": "s1_m0", "question": "...", "attempt": 0-2 }
+    Response: { "success": true, "hint": "..." }
+    """
+    data = _get_json()
+    key = data.get("module_key")
+    q_text = data.get("question")  # Grabs the question from the screen
+    idx = data.get("attempt")
+    
+    if not key or not q_text or idx is None:
+        return jsonify({
+            "success": False,
+            "message": "Missing module_key, question, or attempt index"
+        }), 400
+    
+    # SELECTION: Check if we have already saved these hints in our List
+    entry = StationHint.query.filter_by(module_key=key).first()
+    
+    if not entry:
+        # If not in DB, call the 3rd Party AI Procedure
+        new_hints = call_ai_api(q_text)
+        entry = StationHint(key=key, hints=new_hints)
+        db.session.add(entry)
+        db.session.commit()
+    
+    # Check if attempt index is valid
+    if idx < 0 or idx >= len(entry.hint_collection):
+        return jsonify({
+            "success": False,
+            "message": f"Invalid attempt index. Must be between 0 and {len(entry.hint_collection)-1}"
+        }), 400
+    
+    # Output the specific hint requested
+    return jsonify({
+        "success": True,
+        "hint": entry.hint_collection[idx],
+        "module_key": key,
+        "attempt": idx,
+        "total_hints": len(entry.hint_collection)
+    })
+
+
+@robop_api.route("/generate_hints", methods=["POST"])
+def generate_hints():
+    """
+    Generates AI hints for a question and stores them in the database.
+    Request body: { "module_key": "s1_m0", "question_text": "..." }
+    Response: { "success": true, "hints": ["hint1", "hint2", "hint3"] }
+    """
+    data = _get_json()
+    module_key = data.get("module_key")
+    question_text = data.get("question_text")
+    
+    if not module_key or not question_text:
+        return jsonify({
+            "success": False, 
+            "message": "Missing module_key or question_text"
+        }), 400
+    
+    # Check if hints already exist for this module
+    existing = StationHint.query.filter_by(module_key=module_key).first()
+    if existing:
+        # Return existing hints from database
+        return jsonify({
+            "success": True,
+            "hints": existing.hint_collection,
+            "cached": True
+        }), 200
+    
+    # Generate new hints using AI
+    try:
+        hint_list = call_ai_api(question_text)
+        new_entry = StationHint(key=module_key, hints=hint_list)
+        db.session.add(new_entry)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "hints": hint_list,
+            "cached": False
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "message": f"Failed to generate hints: {str(e)}"
+        }), 500

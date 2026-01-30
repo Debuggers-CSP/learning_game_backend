@@ -130,6 +130,18 @@ class UserBadge(db.Model):
         }
 
 
+class StationHint(db.Model):
+    """Satisfies the 'List' requirement for the Create PT"""
+    __tablename__ = "StationHint"
+    id = db.Column(db.Integer, primary_key=True)
+    module_key = db.Column(db.String(64), unique=True, nullable=False)  # e.g. "s1_m0"
+    hint_collection = db.Column(db.JSON, nullable=False)  # Stores the list of AI hints
+
+    def __init__(self, key, hints):
+        self.module_key = key
+        self.hint_collection = hints
+
+
 def initRobopUsers():
     """Create RobopUser table and (optionally) seed a demo user."""
     with app.app_context():
