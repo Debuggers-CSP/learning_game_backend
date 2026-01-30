@@ -144,3 +144,103 @@ def assign_badge():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+# --- NEW: AUTOFILL ENDPOINT ---
+
+@robop_api.route("/autofill", methods=["POST"])
+def autofill_answer():
+    """
+    Returns the correct answer for a given sector and question.
+    Request body: { "sector_id": 1-5, "question_num": 0-2 }
+    Response: { "success": true, "answer": "..." }
+    """
+    data = _get_json()
+    sector_id = data.get("sector_id")
+    question_num = data.get("question_num")
+    
+    if sector_id is None or question_num is None:
+        return jsonify({"success": False, "message": "Missing sector_id or question_num"}), 400
+    
+    # Define correct answers for each sector and question
+    # Question 0: Robot Simulation Code
+    # Question 1: Pseudocode Function
+    # Question 2: MCQ Answer Index
+    
+    answers = {
+        1: {
+            0: "robot.MoveForward(4);\nrobot.TurnRight();\nrobot.MoveForward(4);",
+            1: """function Average(nums) {
+  let sum = 0;
+  for (let n of nums) {
+    sum += n;
+  }
+  return sum / nums.length;
+}""",
+            2: 0  # "13" is the correct answer for "1101 binary?"
+        },
+        2: {
+            0: "robot.MoveForward(4);\nrobot.TurnLeft();\nrobot.MoveForward(4);",
+            1: """function CountAbove(nums, t) {
+  let count = 0;
+  for (let n of nums) {
+    if (n > t) {
+      count += 1;
+    }
+  }
+  return count;
+}""",
+            2: 0  # "Both" is correct for AND logic
+        },
+        3: {
+            0: "robot.MoveForward(2);\nrobot.TurnRight();\nrobot.MoveForward(4);\nrobot.TurnRight();\nrobot.MoveForward(2);",
+            1: """function MaxValue(nums) {
+  let max = nums[0];
+  for (let n of nums) {
+    if (n > max) {
+      max = n;
+    }
+  }
+  return max;
+}""",
+            2: 0  # "Hide detail" is correct for abstraction
+        },
+        4: {
+            0: "robot.MoveForward(4);",
+            1: """function ReplaceAll(list, t, r) {
+  for (let i=0; i<list.length; i++) {
+    if (list[i] === t) {
+      list[i] = r;
+    }
+  }
+  return list;
+}""",
+            2: 0  # "Routing" is correct for IP Protocol
+        },
+        5: {
+            0: "robot.TurnRight();\nrobot.MoveForward(2);\nrobot.TurnLeft();\nrobot.MoveForward(4);\nrobot.TurnLeft();\nrobot.MoveForward(2);",
+            1: """function GetEvens(nums) {
+  let evens = [];
+  for (let n of nums) {
+    if (n % 2 === 0) {
+      evens.push(n);
+    }
+  }
+  return evens;
+}""",
+            2: 0  # "Rule of thumb" is correct for heuristics
+        }
+    }
+    
+    # Check if sector and question exist
+    if sector_id not in answers or question_num not in answers[sector_id]:
+        return jsonify({"success": False, "message": "Invalid sector or question number"}), 404
+    
+    answer = answers[sector_id][question_num]
+    
+    return jsonify({
+        "success": True,
+        "answer": answer,
+        "sector_id": sector_id,
+        "question_num": question_num
+    }), 200
