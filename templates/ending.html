@@ -31,6 +31,10 @@
         border-radius: 12px;
         padding: 16px;
     }
+    .code-box pre {
+        margin: 0;
+        white-space: pre-wrap;
+    }
     .status-pill {
         padding: 4px 10px;
         border-radius: 999px;
@@ -44,6 +48,55 @@
     .status-bad {
         background: #fee2e2;
         color: #991b1b;
+    }
+    .guide-panel {
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 12px;
+        padding: 16px;
+        min-height: 160px;
+    }
+    .guide-progress {
+        height: 6px;
+        background: rgba(148, 163, 184, 0.3);
+        border-radius: 999px;
+        overflow: hidden;
+        margin-bottom: 12px;
+    }
+    .guide-progress > div {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #38bdf8, #22d3ee);
+        transition: width 0.3s ease;
+    }
+    .guide-step {
+        padding: 8px 10px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        background: rgba(148, 163, 184, 0.12);
+    }
+    .guide-step.active {
+        background: rgba(56, 189, 248, 0.25);
+        border: 1px solid rgba(56, 189, 248, 0.6);
+    }
+    .chat-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 12px;
+        max-height: 260px;
+        overflow-y: auto;
+        background: #fafafa;
+    }
+    .chat-message {
+        margin-bottom: 10px;
+    }
+    .chat-user {
+        font-weight: 600;
+        color: #1f2937;
+    }
+    .chat-ai {
+        font-weight: 600;
+        color: #2563eb;
     }
 </style>
 {% endblock %}
@@ -139,6 +192,38 @@
                 </div>
             </div>
         </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">AI Walkthrough (No Full Code)</h5>
+                    <p class="text-muted">Generate a guided, step-by-step explanation without revealing the full solution.</p>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button id="generateGuide" class="btn btn-outline-primary">Generate Walkthrough</button>
+                        <button id="playGuide" class="btn btn-outline-secondary">Play Walkthrough</button>
+                        <span id="guideStatus" class="text-muted"></span>
+                    </div>
+                    <div class="guide-panel" id="guidePanel">
+                        <div class="guide-progress"><div id="guideProgress"></div></div>
+                        <div class="text-muted">No walkthrough generated yet.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Ask the AI for Help</h5>
+                    <div id="chatBox" class="chat-box mb-3"></div>
+                    <div class="input-group">
+                        <input id="chatInput" type="text" class="form-control" placeholder="Ask a question about the logic...">
+                        <button id="chatSend" class="btn btn-primary">Send</button>
+                    </div>
+                    <small class="text-muted">The AI will guide you without giving the full answer.</small>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -160,6 +245,17 @@
     const checkAnswerBtn = document.getElementById("checkAnswer");
     const saveCompletionBtn = document.getElementById("saveCompletion");
     const checkStatus = document.getElementById("checkStatus");
+    const generateGuideBtn = document.getElementById("generateGuide");
+    const playGuideBtn = document.getElementById("playGuide");
+    const guidePanel = document.getElementById("guidePanel");
+    const guideStatus = document.getElementById("guideStatus");
+    const guideProgress = document.getElementById("guideProgress");
+    const chatBox = document.getElementById("chatBox");
+    const chatInput = document.getElementById("chatInput");
+    const chatSend = document.getElementById("chatSend");
+    const chatHistory = [];
+    let guideSteps = [];
+    let guideDurations = [];
 
     function formatTimestamp(ts) {
         if (!ts) return "-";
@@ -229,8 +325,120 @@
             checkStatus.textContent = "✅ Correct answer";
         } else {
             checkStatus.textContent = "❌ Incorrect answer";
+            if (Array.isArray(data.steps) && data.steps.length) {
+                guideSteps = data.steps;
+                renderGuideSteps(guideSteps, "Fix Steps");
+            }
         }
         await loadScore();
+    });
+
+    function renderGuideSteps(steps, title = "Walkthrough") {
+        if (!guidePanel) return;
+        if (!steps || !steps.length) {
+            guidePanel.innerHTML = "<div class=\"text-muted\">No steps available yet.</div>";
+            return;
+        }
+        guidePanel.innerHTML = `
+            <div class=\"guide-progress\"><div id=\"guideProgress\"></div></div>
+            <div class=\"mb-2\"><strong>${title}</strong></div>
+            ${steps.map((step, index) => `
+                <div class=\"guide-step\" data-step=\"${index}\">
+                    ${index + 1}. ${step}
+                </div>
+            `).join("")}
+        `;
+    }
+
+    generateGuideBtn.addEventListener("click", async () => {
+        guideStatus.textContent = "Generating...";
+        const response = await fetch(`/player/${playerId}/guidance`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ answer: finalAnswerInput.value })
+        });
+        const data = await response.json();
+        if (data.success) {
+            guideSteps = data.steps || [];
+            guideDurations = Array.isArray(data.durations) ? data.durations : [];
+            renderGuideSteps(guideSteps, data.title || "Walkthrough");
+            guideStatus.textContent = "";
+        } else {
+            guideStatus.textContent = data.message || "Unable to generate";
+        }
+    });
+
+    playGuideBtn.addEventListener("click", () => {
+        if (!guideSteps.length) {
+            guideStatus.textContent = "Generate a walkthrough first";
+            return;
+        }
+        guideStatus.textContent = "Playing...";
+        const stepElements = Array.from(document.querySelectorAll(".guide-step"));
+        const progressEl = document.getElementById("guideProgress");
+        let index = 0;
+
+        function speakNext() {
+            if (index >= guideSteps.length) {
+                guideStatus.textContent = "Finished";
+                return;
+            }
+            stepElements.forEach(el => el.classList.remove("active"));
+            const activeEl = stepElements[index];
+            if (activeEl) activeEl.classList.add("active");
+
+            const durationMs = (guideDurations[index] || 7) * 1000;
+            if (progressEl) {
+                const percent = Math.min(100, Math.round(((index + 1) / guideSteps.length) * 100));
+                progressEl.style.width = `${percent}%`;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(guideSteps[index]);
+            utterance.onend = () => {
+                index += 1;
+                speakNext();
+            };
+            speechSynthesis.cancel();
+            speechSynthesis.speak(utterance);
+
+            setTimeout(() => {
+                if (!speechSynthesis.speaking) {
+                    index += 1;
+                    speakNext();
+                }
+            }, durationMs);
+        }
+
+        speakNext();
+    });
+
+    function appendChatMessage(role, text) {
+        if (!chatBox) return;
+        const wrapper = document.createElement("div");
+        wrapper.className = "chat-message";
+        const labelClass = role === "user" ? "chat-user" : "chat-ai";
+        const label = role === "user" ? "You" : "AI";
+        wrapper.innerHTML = `<div class=\"${labelClass}\">${label}</div><div>${text}</div>`;
+        chatBox.appendChild(wrapper);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    chatSend.addEventListener("click", async () => {
+        const message = chatInput.value.trim();
+        if (!message) return;
+        appendChatMessage("user", message);
+        chatHistory.push({ role: "user", content: message });
+        chatInput.value = "";
+
+        const response = await fetch(`/player/${playerId}/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message, history: chatHistory })
+        });
+        const data = await response.json();
+        const reply = data.reply || data.message || "No response";
+        appendChatMessage("assistant", reply);
+        chatHistory.push({ role: "assistant", content: reply });
     });
 
     saveCompletionBtn.addEventListener("click", async () => {

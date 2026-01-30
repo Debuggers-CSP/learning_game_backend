@@ -46,6 +46,49 @@ def _extract_json(text: str) -> dict:
         return {}
 
 
+def _strip_code_blocks(text: str) -> str:
+    if not text:
+        return ""
+    # Remove fenced code blocks
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    # Remove inline code backticks
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    # Remove leftover double spaces
+    return " ".join(text.split())
+
+
+def _call_gemini(prompt: str, text: str) -> str:
+    api_key = current_app.config.get("GEMINI_API_KEY")
+    server = current_app.config.get("GEMINI_SERVER")
+    if not api_key or not server:
+        return ""
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": f"{prompt}\n\n{text}"}
+                ]
+            }
+        ]
+    }
+
+    try:
+        response = requests.post(
+            f"{server}?key={api_key}",
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=15
+        )
+        if response.status_code != 200:
+            return ""
+        gemini_json = response.json()
+        raw_text = gemini_json["candidates"][0]["content"]["parts"][0]["text"]
+        return _strip_code_blocks(raw_text)
+    except (requests.RequestException, KeyError, IndexError, TypeError):
+        return ""
+
+
 def _fallback_grade(answer: str) -> dict:
     expected = current_app.config.get("FINAL_CODE_ANSWER", "")
     normalized_answer = _normalize_answer(answer)
@@ -65,70 +108,108 @@ def _fallback_grade(answer: str) -> dict:
 
 
 def _grade_final_answer(answer: str) -> dict:
-    api_key = current_app.config.get("GEMINI_API_KEY")
-    server = current_app.config.get("GEMINI_SERVER")
-
     result = None
-    if api_key and server:
-        prompt = (
-            "You are grading a student's final code answer. "
-            "Return ONLY valid JSON with this schema: "
-            "{\"verdict\":\"Correct\"|\"Incorrect\",\"explanation\":string,\"steps\":string[]}\n"
-            "If verdict is Correct, explanation should be 'Correct' and steps must be an empty array. "
-            "If verdict is Incorrect, provide a short explanation and 3-6 numbered fix steps as strings."
-        )
+    prompt = (
+        "You are grading a student's final code answer. "
+        "Return ONLY valid JSON with this schema: "
+        "{\"verdict\":\"Correct\"|\"Incorrect\",\"explanation\":string,\"steps\":string[]}\n"
+        "If verdict is Correct, explanation should be 'Correct' and steps must be an empty array. "
+        "If verdict is Incorrect, provide a short explanation and 3-6 numbered fix steps as strings."
+    )
 
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": f"{prompt}\n\nStudent answer:\n{answer}" 
-                        }
+    gemini_text = _call_gemini(prompt, f"Student answer:\n{answer}")
+    if gemini_text:
+        parsed = _extract_json(gemini_text)
+        verdict = (parsed.get("verdict") or "").strip().lower()
+        explanation = (parsed.get("explanation") or "").strip()
+        steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
+
+        if verdict in {"correct", "incorrect"}:
+            correct = verdict == "correct"
+            if correct:
+                result = {"correct": True, "message": "Correct", "steps": []}
+            else:
+                cleaned_steps = [str(step).strip() for step in steps if str(step).strip()]
+                result = {
+                    "correct": False,
+                    "message": explanation or "Incorrect",
+                    "steps": cleaned_steps[:6] if cleaned_steps else [
+                        "Identify the incorrect logic or missing edge cases.",
+                        "Adjust the algorithm to match required behavior.",
+                        "Re-test with sample inputs and refine."
                     ]
                 }
-            ]
-        }
-
-        try:
-            response = requests.post(
-                f"{server}?key={api_key}",
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=10
-            )
-            if response.status_code == 200:
-                gemini_json = response.json()
-                gemini_text = ""
-                try:
-                    gemini_text = gemini_json["candidates"][0]["content"]["parts"][0]["text"]
-                except (KeyError, IndexError, TypeError):
-                    gemini_text = ""
-
-                parsed = _extract_json(gemini_text)
-                verdict = (parsed.get("verdict") or "").strip().lower()
-                explanation = (parsed.get("explanation") or "").strip()
-                steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
-
-                if verdict in {"correct", "incorrect"}:
-                    correct = verdict == "correct"
-                    if correct:
-                        result = {"correct": True, "message": "Correct", "steps": []}
-                    else:
-                        cleaned_steps = [str(step).strip() for step in steps if str(step).strip()]
-                        result = {
-                            "correct": False,
-                            "message": explanation or "Incorrect",
-                            "steps": cleaned_steps[:6] if cleaned_steps else [
-                                "Identify the incorrect logic or missing edge cases.",
-                                "Adjust the algorithm to match required behavior.",
-                                "Re-test with sample inputs and refine."
-                            ]
-                        }
-        except requests.RequestException:
-            result = None
 
     return result or _fallback_grade(answer)
+
+
+def _generate_guidance(answer: str) -> dict:
+    prompt = (
+        "You are a tutoring assistant. Provide a step-by-step walkthrough "
+        "that explains how to build a solution without giving full code or pseudocode. "
+        "Return ONLY valid JSON with this schema: "
+        "{\"title\":string,\"steps\":string[]}\n"
+        "Keep steps short, actionable, and avoid revealing a full solution."
+    )
+
+    gemini_text = _call_gemini(prompt, f"Student context:\n{answer}")
+    if gemini_text:
+        parsed = _extract_json(gemini_text)
+        title = (parsed.get("title") or "Walkthrough").strip() or "Walkthrough"
+        steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
+        cleaned_steps = [
+            _strip_code_blocks(str(step)).strip()
+            for step in steps
+            if str(step).strip()
+        ]
+        if cleaned_steps:
+            durations = [7 for _ in cleaned_steps[:8]]
+            return {"success": True, "title": title, "steps": cleaned_steps[:8], "durations": durations}
+
+    fallback_steps = [
+        "Identify the inputs, outputs, and any constraints.",
+        "Break the task into smaller logical steps.",
+        "Define the data structures you need for tracking progress.",
+        "Write the main loop or flow that processes each step.",
+        "Handle edge cases and invalid inputs.",
+        "Test with small examples and refine."
+    ]
+    return {
+        "success": True,
+        "title": "Walkthrough",
+        "steps": fallback_steps,
+        "durations": [7 for _ in fallback_steps]
+    }
+
+
+def _chat_response(message: str, history: list) -> dict:
+    lowered = message.lower()
+    if "code example" in lowered or "full code" in lowered or "write the code" in lowered:
+        return {
+            "success": True,
+            "reply": "I can’t share full code. I can guide you step-by-step or help debug a specific part. What’s the first step you’re unsure about?"
+        }
+
+    prompt = (
+        "You are an interactive tutor helping a student write code. "
+        "Do NOT provide full code or pseudocode. Ask clarifying questions and provide hints. "
+        "Keep responses short and actionable."
+    )
+
+    history_text = ""
+    for item in history[-6:]:
+        role = (item.get("role") or "user").capitalize()
+        content = item.get("content") or ""
+        history_text += f"{role}: {content}\n"
+
+    gemini_text = _call_gemini(prompt, f"Conversation:\n{history_text}\nUser: {message}")
+    if gemini_text:
+        return {"success": True, "reply": _strip_code_blocks(gemini_text).strip()}
+
+    return {
+        "success": True,
+        "reply": "I can help with hints. What part of the logic is confusing?"
+    }
 
 
 def _get_earned_badges(player_id: int) -> list:
@@ -319,6 +400,36 @@ def complete_player(player_id):
     db.session.commit()
 
     return jsonify({"success": True, "message": "Completion saved"}), 200
+
+
+@endgame_api.route("/player/<int:player_id>/guidance", methods=["POST"])
+def generate_guidance(player_id):
+    player = Player.query.get(player_id)
+    if not player:
+        return jsonify({"success": False, "message": "Player not found"}), 404
+
+    data = _get_json()
+    answer = (data.get("answer") or "").strip()
+
+    result = _generate_guidance(answer)
+    return jsonify(result), 200
+
+
+@endgame_api.route("/player/<int:player_id>/chat", methods=["POST"])
+def chat_with_ai(player_id):
+    player = Player.query.get(player_id)
+    if not player:
+        return jsonify({"success": False, "message": "Player not found"}), 404
+
+    data = _get_json()
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"success": False, "message": "Message is required"}), 400
+
+    history = data.get("history") if isinstance(data.get("history"), list) else []
+
+    result = _chat_response(message, history)
+    return jsonify(result), 200
 
 
 @endgame_api.route("/leaderboard", methods=["GET"])
