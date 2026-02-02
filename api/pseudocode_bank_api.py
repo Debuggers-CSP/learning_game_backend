@@ -25,6 +25,130 @@ LEVEL_MAP = {
 
 VALID_COLS = {"level1", "level2", "level3", "level4", "level5"}
 
+import re
+
+def _normalize(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+def _requires(prompt: str):
+    """
+    Returns a list of requirement keys based on the prompt text.
+    Keep this small and reliable (keyword-style).
+    """
+    p = _normalize(prompt)
+
+    req = []
+
+    # common actions
+    if "input" in p:
+        req.append("input")
+    if "display" in p or "output" in p or "print" in p:
+        req.append("output")
+
+    # conditionals / loops / functions
+    if "if" in p or "otherwise" in p or "else" in p:
+        req.append("if")
+    if "for " in p or "from" in p or "times" in p or "1 to" in p or "1..":
+        req.append("loop")
+    if "write " in p or "returns" in p or "return" in p or "(" in p and ")" in p and "write" in p:
+        req.append("function")
+    if "return" in p or "returns" in p:
+        req.append("return")
+
+    # list/string specific hints
+    if "list" in p:
+        req.append("list")
+    if "string" in p:
+        req.append("string")
+
+    # special literals in your question bank that are easy to check
+    if '"even"' in p or " even " in p and '"odd"' in p or " odd " in p:
+        req.append("even_odd_words")
+    if '"hot"' in p:
+        req.append("hot_word")
+    if '"apcsp"' in p:
+        req.append("apcsp_word")
+
+    return req
+
+def grade_pseudocode(question_text: str, user_code: str):
+    """
+    Very lightweight rule-based checker.
+    It checks for required constructs, not perfect logic.
+    """
+    q = question_text or ""
+    code = user_code or ""
+    norm = _normalize(code)
+
+    reqs = _requires(q)
+    missing = []
+
+    def has_any(tokens):
+        return any(t in norm for t in tokens)
+
+    # Input
+    if "input" in reqs:
+        if not has_any(["input", "read", "get ", "scan", "ask "]):
+            missing.append("An INPUT step (e.g., INPUT x)")
+
+    # Output
+    if "output" in reqs:
+        if not has_any(["display", "print", "output", "show "]):
+            missing.append("An OUTPUT step (e.g., DISPLAY x)")
+
+    # If/Else
+    if "if" in reqs:
+        if not has_any(["if", "else", "otherwise"]):
+            missing.append("An IF/ELSE decision")
+
+    # Loop
+    if "loop" in reqs:
+        if not has_any(["for", "while", "repeat", "loop"]):
+            missing.append("A LOOP (for/while/repeat)")
+
+    # Function
+    if "function" in reqs:
+        if not has_any(["function", "procedure", "define", "def "]):
+            missing.append("A FUNCTION/PROCEDURE definition")
+
+    # Return
+    if "return" in reqs:
+        if "return" not in norm:
+            missing.append("A RETURN statement")
+
+    # Lists
+    if "list" in reqs:
+        if not has_any(["list", "[", "]", "append", "add", "remove"]):
+            missing.append("Some LIST handling (list creation/access/append/remove)")
+
+    # Strings
+    if "string" in reqs:
+        if not has_any(["string", "char", "substring", "length", "letters"]):
+            # allow a pass if they clearly do string operations without those keywords
+            if not re.search(r"[a-zA-Z]", code):
+                missing.append("Some STRING handling")
+
+    # Special literal checks
+    if "even_odd_words" in reqs:
+        if not (("even" in norm) and ("odd" in norm)):
+            missing.append('Both output words "EVEN" and "ODD"')
+
+    if "hot_word" in reqs:
+        if "hot" not in norm:
+            missing.append('Output word "Hot"')
+
+    if "apcsp_word" in reqs:
+        if "apcsp" not in norm:
+            missing.append('Use the literal "APCSP" in the comparison/output')
+
+    passed = (len(missing) == 0)
+
+    return {
+        "passed": passed,
+        "missing": missing,
+        "notes": "This checker validates required structures/keywords for the prompt."
+    }
+
 
 def _resolve_level(raw: str) -> str:
     raw = (raw or "").strip().lower()
