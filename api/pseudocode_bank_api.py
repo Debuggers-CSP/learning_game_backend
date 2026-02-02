@@ -157,12 +157,36 @@ def _resolve_level(raw: str) -> str:
 
 @pseudocode_bank_api.route("/random", methods=["GET"])
 def random_question():
-    @pseudocode_bank_api.route("/grade", methods=["POST"])
+    level = _resolve_level(request.args.get("level", "1"))
+    if level not in VALID_COLS:
+        return jsonify({
+            "success": False,
+            "message": "Invalid level. Use 1-5 or super_easy/easy/medium/hard/hacker."
+        }), 400
+
+    col = getattr(PseudocodeQuestionBank, level)
+
+    row = (
+        PseudocodeQuestionBank.query
+        .filter(col.isnot(None))
+        .filter(col != "")
+        .order_by(db.func.random())
+        .first()
+    )
+
+    if not row:
+        return jsonify({"success": False, "message": f"No questions available for {level}."}), 404
+
+    return jsonify({
+        "success": True,
+        "level": level,
+        "question": getattr(row, level),
+        "question_id": row.id
+    }), 200
+
+
+@pseudocode_bank_api.route("/grade", methods=["POST"])
 def grade_question():
-    """
-    POST /api/pseudocode_bank/grade
-    body: { "question_id": 7, "pseudocode": "...", "level": "level3" }
-    """
     data = request.get_json(silent=True) or {}
 
     qid = data.get("question_id", None)
@@ -176,13 +200,10 @@ def grade_question():
     if not row:
         return jsonify({"success": False, "message": "Question not found"}), 404
 
-    # If level wasn't provided, try to infer from which column is non-empty.
-    # (Front-end already knows currentPseudo.level, so sending level is best.)
     question_text = None
     if level and hasattr(row, level):
         question_text = getattr(row, level)
     else:
-        # fallback: pick the first non-empty level column
         for col in ["level1", "level2", "level3", "level4", "level5"]:
             val = getattr(row, col, None)
             if val:
