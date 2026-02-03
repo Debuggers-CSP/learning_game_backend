@@ -5,7 +5,7 @@
 <div class="container mt-5">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <h1>Robop Users</h1>
-    <div>
+    <div class="d-flex">
       <button id="toggleEditBtn" class="btn btn-primary me-2">
         <i class="bi bi-pencil"></i> <span id="editBtnText">Enable Edit Mode</span>
       </button>
@@ -14,85 +14,90 @@
       </button>
     </div>
   </div>
-  
+
   <div id="editModeAlert" class="alert alert-info d-none">
     <i class="bi bi-info-circle"></i> Edit Mode: Click on any cell to edit. Press Enter to save, Esc to cancel.
   </div>
-  
+
   <div id="saveStatus" class="alert d-none"></div>
 
-  <table class="table table-striped" id="robopUserTable">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>UID</th>
-        <th>First</th>
-        <th>Last</th>
-        <th>Email</th>
-        <th>Role</th>
-        <th>Status</th>
-        <th>Created</th>
-        <th>Last Login</th>
+  <!-- IMPORTANT: table-responsive wraps ONLY the table -->
+  <div class="table-responsive">
+    <table class="table table-striped dt-responsive nowrap" id="robopUserTable" style="width:100%">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>UID</th>
+          <th>First</th>
+          <th>Last</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Last Login</th>
 
-        <!-- NEW badge columns -->
-        <th>Badge Count</th>
-        <th>Best Badge</th>
-        <th>Best Score</th>
-        <th>Best Sector</th>
-        <th>Last Badge</th>
-        <th>Last Earned</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
+          <th>Badge Count</th>
+          <th>Best Badge</th>
+          <th>Best Score</th>
+          <th>Best Sector</th>
+          <th>Last Badge</th>
+          <th>Last Earned</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
 
-    <tbody>
-      {% for u in robop_user_data %}
-      <tr id="robop-user-{{ u.id }}" data-id="{{ u.id }}">
-        <td>{{ u.id }}</td>
-        <td class="editable" data-field="uid">{{ u.uid }}</td>
-        <td class="editable" data-field="first_name">{{ u.first_name }}</td>
-        <td class="editable" data-field="last_name">{{ u.last_name }}</td>
-        <td class="editable" data-field="email">{{ u.email or "" }}</td>
-        <td class="editable" data-field="role">
-          {% if u.role %}
-            <span class="badge 
-              {% if u.role == 'Admin' %}bg-danger
-              {% elif u.role == 'moderator' %}bg-warning
-              {% else %}bg-secondary{% endif %}">
-              {{ u.role }}
-            </span>
-          {% else %}—{% endif %}
-        </td>
-        <td class="editable" data-field="status">
-          {% if u.status %}
-            <span class="badge 
-              {% if u.status == 'active' %}bg-success
-              {% elif u.status == 'inactive' %}bg-danger
-              {% elif u.status == 'pending' %}bg-warning
-              {% else %}bg-secondary{% endif %}">
-              {{ u.status }}
-            </span>
-          {% else %}—{% endif %}
-        </td>
-        <td>{{ u.created or "—" }}</td>
-        <td>{{ u.last_login or "—" }}</td>
+      <tbody>
+        {% for u in robop_user_data %}
+        <tr id="robop-user-{{ u.id }}" data-id="{{ u.id }}">
+          <td>{{ u.id }}</td>
+          <td class="editable" data-field="uid">{{ u.uid }}</td>
+          <td class="editable" data-field="first_name">{{ u.first_name }}</td>
+          <td class="editable" data-field="last_name">{{ u.last_name }}</td>
+          <td class="editable" data-field="email">{{ u.email or "" }}</td>
 
-        <!-- NEW badge data - need to add editable class -->
-        <td>{{ u.badge_count or 0 }}</td>
-        <td class="editable" data-field="best_badge">{{ u.best_badge or "—" }}</td>
-        <td class="editable" data-field="best_score">{{ u.best_score or "—" }}</td>
-        <td class="editable" data-field="best_sector">{{ u.best_sector or "—" }}</td>
-        <td class="editable" data-field="last_badge">{{ u.last_badge or "—" }}</td>
-        <td>{{ u.last_earned or "—" }}</td>
-        <td class="action-cell">
-          <button class="btn btn-sm btn-danger delete-btn" data-id="{{ u.id }}">
-            <i class="bi bi-trash"></i>
-          </button>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          <td class="editable" data-field="role">
+            {% if u.role %}
+              <span class="badge 
+                {% if u.role == 'Admin' %}bg-danger
+                {% elif u.role == 'moderator' %}bg-warning
+                {% else %}bg-secondary{% endif %}">
+                {{ u.role }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+
+          <td class="editable" data-field="status">
+            {% if u.status %}
+              <span class="badge 
+                {% if u.status == 'active' %}bg-success
+                {% elif u.status == 'inactive' %}bg-danger
+                {% elif u.status == 'pending' %}bg-warning
+                {% else %}bg-secondary{% endif %}">
+                {{ u.status }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+
+          <td>{{ u.created or "—" }}</td>
+          <td>{{ u.last_login or "—" }}</td>
+
+          <td>{{ u.badge_count or 0 }}</td>
+          <td class="editable" data-field="best_badge">{{ u.best_badge or "—" }}</td>
+          <td class="editable" data-field="best_score">{{ u.best_score or "—" }}</td>
+          <td class="editable" data-field="best_sector">{{ u.best_sector or "—" }}</td>
+          <td class="editable" data-field="last_badge">{{ u.last_badge or "—" }}</td>
+          <td>{{ u.last_earned or "—" }}</td>
+
+          <td class="action-cell">
+            <button class="btn btn-sm btn-danger delete-btn" data-id="{{ u.id }}">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <!-- Add User Modal -->
@@ -147,18 +152,10 @@
   </div>
 </div>
 
-<!-- Add necessary CSS and JS -->
 <style>
-  .editable {
-    cursor: pointer;
-    position: relative;
-  }
-  .editable:hover {
-    background-color: #f8f9fa;
-  }
-  .editable.editing {
-    padding: 0;
-  }
+  .editable { cursor: pointer; position: relative; }
+  .editable:hover { background-color: #f8f9fa; }
+  .editable.editing { padding: 0; }
   .editable-input {
     width: 100%;
     border: 1px solid #0d6efd;
@@ -166,152 +163,184 @@
     margin: -1px;
     border-radius: 4px;
   }
-  .edit-mode .editable {
-    background-color: #f0f8ff;
+  .edit-mode .editable { background-color: #f0f8ff; }
+  .action-cell { white-space: nowrap; }
+  #saveStatus { transition: all 0.3s ease; }
+
+  /* Pagination alignment + spacing */
+  .dataTables_wrapper .dataTables_paginate .pagination {
+    justify-content: flex-end;
+    margin: 0;
   }
-  .action-cell {
-    white-space: nowrap;
+  .dataTables_wrapper .dataTables_info {
+    padding-top: 0.5rem;
   }
-  #saveStatus {
-    transition: all 0.3s ease;
-  }
-  
 </style>
 
+<!-- ========= CSS (order matters) ========= -->
+<!-- If your base.html already includes Bootstrap CSS, you can remove this line -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+
+<!-- ========= JS (order matters) ========= -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- DataTables core FIRST -->
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+
+<!-- Then Bootstrap integration -->
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+
+<!-- Then Responsive -->
+<script src="https://cdn.datatables.net/responsive/2.2.9/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.2.9/js/responsive.bootstrap5.min.js"></script>
 
 <script>
 $(document).ready(function() {
   let isEditMode = false;
   let table = null;
-  
-  // Initialize DataTable
+
+  // Initialize DataTable (Responsive collapses columns instead of cutting off)
   table = $('#robopUserTable').DataTable({
     pageLength: 25,
-    responsive: true
+
+    // IMPORTANT: use Responsive (no scrollX) so it keeps adapting
+    responsive: {
+      details: false   
+    },
+    autoWidth: false,
+
+    dom:
+      "<'row mb-2'<'col-12 col-md-6'l><'col-12 col-md-6'f>>" +
+      "<'row'<'col-12'tr>>" +
+      "<'row mt-2 align-items-center'<'col-12 col-md-5'i><'col-12 col-md-7'p>>",
+
+    pagingType: "simple_numbers",
+
+    // Collapse less important columns first
+    columnDefs: [
+      { responsivePriority: 1, targets: 15 }, // Actions
+      { responsivePriority: 2, targets: 1 },  // UID
+      { responsivePriority: 3, targets: 2 },  // First
+      { responsivePriority: 4, targets: 3 },  // Last
+      { responsivePriority: 5, targets: 0 },  // ID
+      { responsivePriority: 100, targets: [7,8,9,10,11,12,13,14] } // timestamps/badges collapse early
+    ]
   });
-  
+
+  // Force recalculation on resize so it keeps adapting at all widths
+  $(window).on('resize', function () {
+    table.columns.adjust().responsive.recalc();
+  });
+
   // Toggle edit mode
   $('#toggleEditBtn').click(function() {
     isEditMode = !isEditMode;
-    
+
     if (isEditMode) {
-      // Enter edit mode
       $('#editBtnText').text('Disable Edit Mode');
       $('#toggleEditBtn').removeClass('btn-primary').addClass('btn-warning');
       $('#editModeAlert').removeClass('d-none');
       $('body').addClass('edit-mode');
-      // Show add user button
+
       if (!$('#addUserBtn').length) {
         $('#toggleEditBtn').after(
           '<button id="addUserBtn" class="btn btn-success me-2"><i class="bi bi-person-plus"></i> Add User</button>'
         );
       }
     } else {
-      // Exit edit mode
       $('#editBtnText').text('Enable Edit Mode');
       $('#toggleEditBtn').removeClass('btn-warning').addClass('btn-primary');
       $('#editModeAlert').addClass('d-none');
       $('body').removeClass('edit-mode');
-      // Remove add user button
       $('#addUserBtn').remove();
     }
   });
-  
+
   // Refresh button
   $('#refreshBtn').click(function() {
     location.reload();
   });
-  
-  // ==================== Modified: Click cell to edit ====================
+
+  // Click cell to edit
   $(document).on('click', '.editable', function() {
     if (!isEditMode) return;
-    
+
     const $cell = $(this);
     if ($cell.hasClass('editing')) return;
-    
+
     const originalContent = $cell.html().trim();
     const field = $cell.data('field');
     const userId = $cell.closest('tr').data('id');
-    
-    // Save original value
+
     $cell.data('original', originalContent);
-    
-    // Create different editors based on field type
+
     if (field === 'role' || field === 'status') {
-      // Dropdown selector
-      const currentValue = $cell.find('.badge').text().trim().toLowerCase() || 
+      const currentValue = $cell.find('.badge').text().trim().toLowerCase() ||
                           (field === 'role' ? 'user' : 'active');
+
       let options = '';
-      
       if (field === 'role') {
-        const roleOptions = ['user', 'admin', 'moderator'];
-        roleOptions.forEach(role => {
+        ['user', 'admin', 'moderator'].forEach(role => {
           const selected = role === currentValue ? 'selected' : '';
           options += `<option value="${role}" ${selected}>${role.charAt(0).toUpperCase() + role.slice(1)}</option>`;
         });
       } else {
-        const statusOptions = ['active', 'inactive', 'pending'];
-        statusOptions.forEach(status => {
+        ['active', 'inactive', 'pending'].forEach(status => {
           const selected = status === currentValue ? 'selected' : '';
           options += `<option value="${status}" ${selected}>${status.charAt(0).toUpperCase() + status.slice(1)}</option>`;
         });
       }
-      
+
       $cell.html(`<select class="form-select form-select-sm editable-select" data-field="${field}" data-id="${userId}">${options}</select>`)
-           .addClass('editing');
+          .addClass('editing');
       $cell.find('select').focus();
-    } 
-    // Badge name fields (best_badge, last_badge)
+    }
     else if (field === 'best_badge' || field === 'last_badge') {
       const badgeOptions = ['Gold', 'Silver', 'Bronze', 'Participant', '—'];
       let options = '';
-      
       badgeOptions.forEach(badge => {
         const selected = originalContent === badge ? 'selected' : '';
         options += `<option value="${badge}" ${selected}>${badge}</option>`;
       });
-      
+
       $cell.html(`<select class="form-select form-select-sm editable-select" data-field="${field}" data-id="${userId}">${options}</select>`)
-           .addClass('editing');
+          .addClass('editing');
       $cell.find('select').focus();
     }
-    // Score field
     else if (field === 'best_score') {
       $cell.html(`<input type="number" min="0" max="100" class="editable-input" value="${originalContent}" data-field="${field}" data-id="${userId}">`)
-           .addClass('editing');
+          .addClass('editing');
       $cell.find('input').focus().select();
     }
-    // Sector field
     else if (field === 'best_sector') {
       $cell.html(`<input type="number" min="1" max="10" class="editable-input" value="${originalContent}" data-field="${field}" data-id="${userId}">`)
-           .addClass('editing');
+          .addClass('editing');
       $cell.find('input').focus().select();
     }
-    // Regular text fields
     else {
       $cell.html(`<input type="text" class="editable-input" value="${originalContent}" data-field="${field}" data-id="${userId}">`)
-           .addClass('editing');
+          .addClass('editing');
       $cell.find('input').focus().select();
     }
   });
-  
-  // ==================== Modified: Save edit (Enter key or blur) ====================
+
+  // Save edit (Enter key or blur)
   $(document).on('keydown blur', '.editable-input', function(e) {
     if (e.type === 'keydown' && e.which !== 13) return;
-    
+
     const $input = $(this);
     const newValue = $input.val().trim();
     const $cell = $input.closest('.editable');
     const originalContent = $cell.data('original');
     const field = $input.data('field');
     const userId = $input.data('id');
-    
+
     if (newValue !== originalContent && newValue !== '') {
-      // Check if it's a badge field
       const badgeFields = ['best_badge', 'best_score', 'best_sector', 'last_badge'];
       if (badgeFields.includes(field)) {
         updateBadgeInfo(userId, field, newValue, $cell);
@@ -319,12 +348,11 @@ $(document).ready(function() {
         updateUser(userId, field, newValue, $cell);
       }
     } else {
-      // Restore original content
       $cell.html(originalContent).removeClass('editing');
     }
   });
-  
-  // ==================== Modified: Save dropdown selection ====================
+
+  // Save dropdown selection
   $(document).on('change blur', '.editable-select', function() {
     const $select = $(this);
     const newValue = $select.val();
@@ -332,9 +360,8 @@ $(document).ready(function() {
     const originalContent = $cell.data('original');
     const field = $select.data('field');
     const userId = $select.data('id');
-    
+
     if (newValue !== originalContent) {
-      // Check if it's a badge field
       const badgeFields = ['best_badge', 'best_score', 'best_sector', 'last_badge'];
       if (badgeFields.includes(field)) {
         updateBadgeInfo(userId, field, newValue, $cell);
@@ -345,8 +372,8 @@ $(document).ready(function() {
       $cell.html(originalContent).removeClass('editing');
     }
   });
-  
-  // Cancel edit (Esc key)
+
+  // Cancel edit (Esc)
   $(document).on('keydown', '.editable-input, .editable-select', function(e) {
     if (e.keyCode === 27) {
       const $input = $(this);
@@ -355,22 +382,19 @@ $(document).ready(function() {
       $cell.html(originalContent).removeClass('editing');
     }
   });
-  
-  // ==================== New: Badge update function ====================
+
   function updateBadgeInfo(userId, field, value, $cell) {
     const data = {};
     data[field] = value;
-    
-    console.log(`Updating badge info - User ID: ${userId}, Field: ${field}, Value: ${value}`);
+
     showStatus('Saving badge...', 'info');
-    
+
     $.ajax({
       url: `/robop/api/users/${userId}/update_badge`,
       method: 'PUT',
       contentType: 'application/json',
       data: JSON.stringify(data),
       success: function(response) {
-        console.log('Badge update response:', response);
         if (response.success) {
           showStatus('Badge updated successfully!', 'success');
           $cell.text(value);
@@ -380,34 +404,19 @@ $(document).ready(function() {
         }
         $cell.removeClass('editing');
       },
-      error: function(xhr, status, error) {
-        console.error('Badge update error:', {
-          status: xhr.status,
-          statusText: xhr.statusText,
-          responseText: xhr.responseText,
-          error: error
-        });
-        
-        let errorMsg = 'Error saving badge: ';
-        if (xhr.responseJSON && xhr.responseJSON.error) {
-          errorMsg += xhr.responseJSON.error;
-        } else {
-          errorMsg += xhr.statusText || 'Unknown error';
-        }
-        
-        showStatus(errorMsg, 'danger');
+      error: function(xhr) {
+        showStatus('Error saving badge: ' + (xhr.responseJSON?.error || xhr.statusText || 'Unknown error'), 'danger');
         $cell.html($cell.data('original')).removeClass('editing');
       }
     });
   }
-  
-  // ==================== Original user update function ====================
+
   function updateUser(userId, field, value, $cell) {
     const data = {};
     data[field] = value;
-    
+
     showStatus('Saving...', 'info');
-    
+
     $.ajax({
       url: `/robop/api/users/${userId}`,
       method: 'PUT',
@@ -416,12 +425,12 @@ $(document).ready(function() {
       success: function(response) {
         if (response.success) {
           showStatus('Saved successfully!', 'success');
-          
-          // Update cell display
+
           if (field === 'role' || field === 'status') {
-            const badgeClass = field === 'role' ? 
+            const badgeClass = field === 'role' ?
               (value === 'admin' ? 'danger' : value === 'moderator' ? 'warning' : 'secondary') :
               (value === 'active' ? 'success' : value === 'inactive' ? 'danger' : 'warning');
+
             $cell.html(`<span class="badge bg-${badgeClass}">${value}</span>`);
           } else {
             $cell.text(value);
@@ -438,27 +447,24 @@ $(document).ready(function() {
       }
     });
   }
-  
-  // Show status message
+
   function showStatus(message, type) {
     const $status = $('#saveStatus');
     $status.removeClass('d-none alert-info alert-success alert-danger')
-           .addClass('alert-' + type)
-           .html(`<i class="bi ${type === 'success' ? 'bi-check-circle' : 'bi-exclamation-circle'}"></i> ${message}`);
-    
+          .addClass('alert-' + type)
+          .html(`<i class="bi ${type === 'success' ? 'bi-check-circle' : 'bi-exclamation-circle'}"></i> ${message}`);
+
     if (type === 'success') {
-      setTimeout(() => {
-        $status.addClass('d-none');
-      }, 3000);
+      setTimeout(() => $status.addClass('d-none'), 3000);
     }
   }
-  
+
   // Add user button
   $(document).on('click', '#addUserBtn', function() {
     $('#addUserForm')[0].reset();
     $('#addUserModal').modal('show');
   });
-  
+
   // Save new user
   $('#saveNewUserBtn').click(function() {
     const formData = {
@@ -469,7 +475,7 @@ $(document).ready(function() {
       role: $('select[name="role"]').val(),
       status: $('select[name="status"]').val()
     };
-    
+
     $.ajax({
       url: '/robop/api/users',
       method: 'POST',
@@ -489,15 +495,15 @@ $(document).ready(function() {
       }
     });
   });
-  
+
   // Delete user
   $(document).on('click', '.delete-btn', function() {
     if (!isEditMode) return;
-    
+
     const userId = $(this).data('id');
-    const userName = $(this).closest('tr').find('td:nth-child(3)').text() + ' ' + 
-                     $(this).closest('tr').find('td:nth-child(4)').text();
-    
+    const userName = $(this).closest('tr').find('td:nth-child(3)').text() + ' ' +
+                    $(this).closest('tr').find('td:nth-child(4)').text();
+
     if (confirm(`Are you sure you want to delete user: ${userName}?`)) {
       $.ajax({
         url: `/robop/api/users/${userId}`,
