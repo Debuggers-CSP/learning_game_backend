@@ -227,10 +227,12 @@
     </div>
 </div>
 
-<div id="pageData" data-player-id="{{ player_id }}" hidden></div>
+<div id="pageData" data-player-id="{{ player_id }}" data-api-base="" hidden></div>
 
 <script>
-    const playerId = document.getElementById("pageData").dataset.playerId;
+    const pageData = document.getElementById("pageData");
+    const playerId = pageData?.dataset.playerId;
+    const apiBase = pageData?.dataset.apiBase || "";
 
     const badgeList = document.getElementById("badgeList");
     const attemptsTable = document.getElementById("attemptsTable");
@@ -263,6 +265,19 @@
         if (!ts) return "-";
         const date = new Date(ts);
         return date.toLocaleString();
+    }
+
+    async function safeFetch(path, options = {}) {
+        try {
+            const response = await fetch(`${apiBase}${path}`, options);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response;
+        } catch (error) {
+            console.error("Backend request failed:", error);
+            return null;
+        }
     }
 
     function renderScore(data) {
@@ -308,7 +323,17 @@
     }
 
     async function loadScore() {
-        const response = await fetch(`/player/${playerId}/score`);
+        if (!playerId) {
+            badgeList.textContent = "Missing player id";
+            attemptsTable.innerHTML = '<tr><td colspan="3">Missing player id</td></tr>';
+            return;
+        }
+        const response = await safeFetch(`/player/${playerId}/score`);
+        if (!response) {
+            badgeList.textContent = "Backend unavailable";
+            attemptsTable.innerHTML = '<tr><td colspan="3">Backend unavailable</td></tr>';
+            return;
+        }
         const data = await response.json();
         if (data.success) {
             renderScore(data);
@@ -317,14 +342,25 @@
 
     checkAnswerBtn.addEventListener("click", async () => {
         checkStatus.textContent = "Checking...";
-        const response = await fetch(`/player/${playerId}/final-check`, {
+        const response = await safeFetch(`/player/${playerId}/final-check`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ answer: finalAnswerInput.value })
         });
+        if (!response) {
+            checkStatus.textContent = "Backend unavailable";
+            return;
+        }
         const data = await response.json();
         if (data.correct) {
             checkStatus.textContent = "✅ Correct answer";
+            const badgeResponse = await safeFetch(`/player/${playerId}/final-badge`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+            if (!badgeResponse) {
+                checkStatus.textContent = "✅ Correct answer (badge pending)";
+            }
         } else {
             checkStatus.textContent = "❌ Incorrect answer";
             if (Array.isArray(data.steps) && data.steps.length) {
@@ -354,11 +390,15 @@
 
     generateGuideBtn.addEventListener("click", async () => {
         guideStatus.textContent = "Generating...";
-        const response = await fetch(`/player/${playerId}/guidance`, {
+        const response = await safeFetch(`/player/${playerId}/guidance`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ answer: finalAnswerInput.value })
         });
+        if (!response) {
+            guideStatus.textContent = "Backend unavailable";
+            return;
+        }
         const data = await response.json();
         if (data.success) {
             guideSteps = data.steps || [];
@@ -432,11 +472,15 @@
         chatHistory.push({ role: "user", content: message });
         chatInput.value = "";
 
-        const response = await fetch(`/player/${playerId}/chat`, {
+        const response = await safeFetch(`/player/${playerId}/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message, history: chatHistory })
         });
+        if (!response) {
+            appendChatMessage("assistant", "Backend unavailable");
+            return;
+        }
         const data = await response.json();
         const reply = data.reply || data.message || "No response";
         appendChatMessage("assistant", reply);
@@ -455,7 +499,7 @@
             checkStatus.textContent = "Enter a badge name";
             return;
         }
-        const response = await fetch(`/player/${playerId}/complete`, {
+        const response = await safeFetch(`/player/${playerId}/complete`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -464,6 +508,10 @@
                 timestamp: new Date().toISOString()
             })
         });
+        if (!response) {
+            checkStatus.textContent = "Backend unavailable";
+            return;
+        }
         const data = await response.json();
         if (data.success) {
             checkStatus.textContent = "✅ Completion saved";

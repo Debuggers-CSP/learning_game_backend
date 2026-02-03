@@ -16,7 +16,16 @@ def _get_json():
 
 
 def _normalize_answer(answer: str) -> str:
-    return " ".join(answer.strip().split())
+    if not answer:
+        return ""
+    cleaned = answer.lower()
+    cleaned = cleaned.replace("←", " ")
+    cleaned = cleaned.replace("→", " ")
+    cleaned = cleaned.replace("≥", ">=")
+    cleaned = cleaned.replace("≤", "<=")
+    cleaned = cleaned.replace("≠", "!=")
+    cleaned = re.sub(r"[^a-z0-9_]+", " ", cleaned)
+    return " ".join(cleaned.strip().split())
 
 
 def _parse_iso(ts):
@@ -93,8 +102,15 @@ def _fallback_grade(answer: str) -> dict:
     expected = current_app.config.get("FINAL_CODE_ANSWER", "")
     normalized_answer = _normalize_answer(answer)
     normalized_expected = _normalize_answer(expected)
-    correct = bool(normalized_expected) and normalized_answer == normalized_expected
-    if correct:
+    if not expected:
+        if answer.strip():
+            return {"correct": True, "message": "Answer received", "steps": []}
+        return {"correct": False, "message": "Answer is required", "steps": []}
+    if normalized_answer == normalized_expected:
+        return {"correct": True, "message": "Correct", "steps": []}
+    from difflib import SequenceMatcher
+    similarity = SequenceMatcher(None, normalized_answer, normalized_expected).ratio()
+    if similarity >= 0.9:
         return {"correct": True, "message": "Correct", "steps": []}
     return {
         "correct": False,
@@ -222,11 +238,19 @@ def _get_earned_badges(player_id: int) -> list:
     return [row.to_dict() for row in badge_rows]
 
 
+def _get_or_create_player(player_id: int) -> Player:
+    player = Player.query.get(player_id)
+    if player:
+        return player
+    player = Player(id=player_id, username=f"Player {player_id}")
+    db.session.add(player)
+    db.session.commit()
+    return player
+
+
 @endgame_api.route("/player/<int:player_id>/score", methods=["GET"])
 def get_player_score(player_id):
-    player = Player.query.get(player_id)
-    if not player:
-        return jsonify({"success": False, "message": "Player not found"}), 404
+    player = _get_or_create_player(player_id)
 
     badge_rows = (
         PlayerBadge.query
@@ -267,11 +291,14 @@ def get_player_score(player_id):
     return jsonify(response), 200
 
 
+@endgame_api.route("/api/endgame/player/<int:player_id>/score", methods=["GET"])
+def get_player_score_api(player_id):
+    return get_player_score(player_id)
+
+
 @endgame_api.route("/player/<int:player_id>/final-check", methods=["POST"])
 def final_check(player_id):
-    player = Player.query.get(player_id)
-    if not player:
-        return jsonify({"success": False, "message": "Player not found"}), 404
+    player = _get_or_create_player(player_id)
 
     data = _get_json()
     body_player_id = data.get("playerId")
@@ -293,6 +320,11 @@ def final_check(player_id):
     db.session.commit()
 
     return jsonify(result), 200
+
+
+@endgame_api.route("/api/endgame/player/<int:player_id>/final-check", methods=["POST"])
+def final_check_api(player_id):
+    return final_check(player_id)
 
 
 @endgame_api.route("/api/endgame/final-check", methods=["POST"])
@@ -328,9 +360,7 @@ def final_check_frontend():
 
 @endgame_api.route("/player/<int:player_id>/final-badge", methods=["POST"])
 def award_final_badge(player_id):
-    player = Player.query.get(player_id)
-    if not player:
-        return jsonify({"success": False, "message": "Player not found"}), 404
+    player = _get_or_create_player(player_id)
 
     if not player.final_correct:
         return jsonify({"success": False, "message": "Final answer not correct"}), 400
@@ -353,6 +383,14 @@ def award_final_badge(player_id):
         db.session.add(final_badge_row)
         db.session.commit()
 
+    if player.final_badge_id != badge.id:
+        player.final_badge_id = badge.id
+
+    if player.completed_at is None:
+        player.completed_at = datetime.utcnow()
+
+    db.session.commit()
+
     return jsonify({
         "success": True,
         "earned_badges": _get_earned_badges(player_id)
@@ -361,9 +399,7 @@ def award_final_badge(player_id):
 
 @endgame_api.route("/player/<int:player_id>/complete", methods=["POST"])
 def complete_player(player_id):
-    player = Player.query.get(player_id)
-    if not player:
-        return jsonify({"success": False, "message": "Player not found"}), 404
+    player = _get_or_create_player(player_id)
 
     data = _get_json()
     attempts = data.get("attempts")
@@ -402,11 +438,14 @@ def complete_player(player_id):
     return jsonify({"success": True, "message": "Completion saved"}), 200
 
 
+@endgame_api.route("/api/endgame/player/<int:player_id>/complete", methods=["POST"])
+def complete_player_api(player_id):
+    return complete_player(player_id)
+
+
 @endgame_api.route("/player/<int:player_id>/guidance", methods=["POST"])
 def generate_guidance(player_id):
-    player = Player.query.get(player_id)
-    if not player:
-        return jsonify({"success": False, "message": "Player not found"}), 404
+    _get_or_create_player(player_id)
 
     data = _get_json()
     answer = (data.get("answer") or "").strip()
@@ -415,11 +454,14 @@ def generate_guidance(player_id):
     return jsonify(result), 200
 
 
+@endgame_api.route("/api/endgame/player/<int:player_id>/guidance", methods=["POST"])
+def generate_guidance_api(player_id):
+    return generate_guidance(player_id)
+
+
 @endgame_api.route("/player/<int:player_id>/chat", methods=["POST"])
 def chat_with_ai(player_id):
-    player = Player.query.get(player_id)
-    if not player:
-        return jsonify({"success": False, "message": "Player not found"}), 404
+    _get_or_create_player(player_id)
 
     data = _get_json()
     message = (data.get("message") or "").strip()
@@ -430,6 +472,11 @@ def chat_with_ai(player_id):
 
     result = _chat_response(message, history)
     return jsonify(result), 200
+
+
+@endgame_api.route("/api/endgame/player/<int:player_id>/chat", methods=["POST"])
+def chat_with_ai_api(player_id):
+    return chat_with_ai(player_id)
 
 
 @endgame_api.route("/leaderboard", methods=["GET"])
