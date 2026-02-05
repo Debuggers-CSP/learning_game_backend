@@ -47,6 +47,21 @@
     }
     .status-bad {
         background: #fee2e2;
+    
+            function appendChatVideo(url) {
+                if (!chatBox || !url) return;
+                const wrapper = document.createElement("div");
+                wrapper.className = "chat-message";
+                wrapper.innerHTML = `
+                    <div class=\"chat-ai\">AI</div>
+                    <video controls style=\"max-width:100%; border-radius:10px; margin-top:6px;\">
+                        <source src=\"${url}\" type=\"video/mp4\">
+                        Your browser does not support the video tag.
+                    </video>
+                `;
+                chatBox.appendChild(wrapper);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
         color: #991b1b;
     }
     .guide-panel {
@@ -72,12 +87,80 @@
     .guide-step {
         padding: 8px 10px;
         border-radius: 10px;
+                if (data.video_url) {
+                    appendChatVideo(data.video_url);
+                }
         margin-bottom: 8px;
         background: rgba(148, 163, 184, 0.12);
     }
     .guide-step.active {
         background: rgba(56, 189, 248, 0.25);
         border: 1px solid rgba(56, 189, 248, 0.6);
+    }
+    .guide-visuals {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+    }
+    .guide-visual-card {
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 10px;
+    }
+    .guide-visual-card .emoji {
+        font-size: 20px;
+        margin-right: 6px;
+    }
+    .guide-visual-card img {
+        width: 100%;
+        border-radius: 10px;
+        margin-top: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+    .guide-video {
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+    }
+    .guide-video-output {
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+    }
+    .guide-video-output video {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: #0b1020;
+    }
+    .video-fallback {
+        color: #cbd5f5;
+        font-size: 14px;
+        margin-top: 8px;
+    }
+    .video-scene {
+        padding: 8px 10px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid transparent;
+    }
+    .video-scene.active {
+        background: rgba(56, 189, 248, 0.2);
+        border: 1px solid rgba(56, 189, 248, 0.6);
+    }
+    .guide-ui-steps {
+        margin-top: 12px;
+        padding: 10px;
+        border-radius: 10px;
+        background: rgba(34, 211, 238, 0.12);
+        border: 1px solid rgba(34, 211, 238, 0.4);
     }
     .chat-box {
         border: 1px solid #e5e7eb;
@@ -196,16 +279,24 @@
         <div class="col-12">
             <div class="card">
                 <div class="card-body">
-                    <h5 class="card-title">AI Walkthrough (No Full Code)</h5>
-                    <p class="text-muted">Generate a guided, step-by-step explanation without revealing the full solution.</p>
+                    <h5 class="card-title">AI Walkthrough Video (No Full Code)</h5>
+                    <p class="text-muted">Generate a step-by-step video walkthrough that explains how the code is written, without revealing the full solution.</p>
                     <div class="d-flex flex-wrap gap-2 mb-3">
-                        <button id="generateGuide" class="btn btn-outline-primary">Generate Walkthrough</button>
-                        <button id="playGuide" class="btn btn-outline-secondary">Play Walkthrough</button>
+                        <button id="generateGuide" class="btn btn-outline-primary">Generate Video Walkthrough</button>
+                        <button id="playGuide" class="btn btn-outline-secondary">Play Video</button>
                         <span id="guideStatus" class="text-muted"></span>
                     </div>
                     <div class="guide-panel" id="guidePanel">
                         <div class="guide-progress"><div id="guideProgress"></div></div>
                         <div class="text-muted">No walkthrough generated yet.</div>
+                    </div>
+                    <div class="guide-video-output" id="guideVideoOutput" style="display:none;">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+                            <strong>Generated Video</strong>
+                            <a id="downloadVideo" class="btn btn-sm btn-outline-light" download="walkthrough.webm" href="#">Download</a>
+                        </div>
+                        <video id="guideVideoPlayer" controls></video>
+                        <div id="videoFallback" class="video-fallback" style="display:none;"></div>
                     </div>
                 </div>
             </div>
@@ -216,6 +307,7 @@
                 <div class="card-body">
                     <h5 class="card-title">Ask the AI for Help</h5>
                     <div id="chatBox" class="chat-box mb-3"></div>
+                    <div id="chatTyping" class="text-muted" style="display:none;">AI is typing…</div>
                     <div class="input-group">
                         <input id="chatInput" type="text" class="form-control" placeholder="Ask a question about the logic...">
                         <button id="chatSend" class="btn btn-primary">Send</button>
@@ -254,12 +346,21 @@
     const guidePanel = document.getElementById("guidePanel");
     const guideStatus = document.getElementById("guideStatus");
     const guideProgress = document.getElementById("guideProgress");
+    const guideVideoOutput = document.getElementById("guideVideoOutput");
+    const guideVideoPlayer = document.getElementById("guideVideoPlayer");
+    const downloadVideo = document.getElementById("downloadVideo");
+    const videoFallback = document.getElementById("videoFallback");
     const chatBox = document.getElementById("chatBox");
     const chatInput = document.getElementById("chatInput");
     const chatSend = document.getElementById("chatSend");
+    const chatTyping = document.getElementById("chatTyping");
     const chatHistory = [];
     let guideSteps = [];
     let guideDurations = [];
+    let guideVideo = null;
+    let guideUiSteps = [];
+    let guideVideoNotice = "";
+    let guideVideoBlobUrl = "";
 
     function formatTimestamp(ts) {
         if (!ts) return "-";
@@ -365,6 +466,9 @@
             checkStatus.textContent = "❌ Incorrect answer";
             if (Array.isArray(data.steps) && data.steps.length) {
                 guideSteps = data.steps;
+                guideVideo = null;
+                guideUiSteps = [];
+                guideVideoNotice = "";
                 renderGuideSteps(guideSteps, "Fix Steps");
             }
         }
@@ -377,6 +481,32 @@
             guidePanel.innerHTML = "<div class=\"text-muted\">No steps available yet.</div>";
             return;
         }
+        const videoNoticeHtml = guideVideoNotice
+            ? `<div class=\"text-warning mt-2\" style=\"font-size: 13px;\">${guideVideoNotice}</div>`
+            : "";
+        const videoHtml = guideVideo && Array.isArray(guideVideo.scenes) && guideVideo.scenes.length
+            ? `
+                <div class=\"mt-3\"><strong>${guideVideo.title || "Step-by-step Video"}</strong></div>
+                <div class=\"guide-video\">
+                    ${guideVideo.scenes.map((scene, idx) => `
+                        <div class=\"video-scene\" data-scene=\"${idx}\">
+                            <div><strong>${scene.title || `Scene ${idx + 1}`}</strong></div>
+                            <div class=\"text-muted\" style=\"font-size: 13px;\">${scene.on_screen || scene.narration || ""}</div>
+                        </div>
+                    `).join("")}
+                </div>
+            `
+            : "";
+        const uiStepsHtml = Array.isArray(guideUiSteps) && guideUiSteps.length
+            ? `
+                <div class=\"guide-ui-steps\">
+                    <div class=\"mb-1\"><strong>UI Step-by-Step</strong></div>
+                    <ol class=\"mb-0\">
+                        ${guideUiSteps.map(step => `<li>${step}</li>`).join("")}
+                    </ol>
+                </div>
+            `
+            : "";
         guidePanel.innerHTML = `
             <div class=\"guide-progress\"><div id=\"guideProgress\"></div></div>
             <div class=\"mb-2\"><strong>${title}</strong></div>
@@ -385,7 +515,162 @@
                     ${index + 1}. ${step}
                 </div>
             `).join("")}
+            ${uiStepsHtml}
+            ${videoNoticeHtml}
+            ${videoHtml}
         `;
+    }
+
+    function resetVideoOutput() {
+        if (guideVideoBlobUrl) {
+            URL.revokeObjectURL(guideVideoBlobUrl);
+            guideVideoBlobUrl = "";
+        }
+        if (guideVideoPlayer) {
+            guideVideoPlayer.src = "";
+        }
+        if (downloadVideo) {
+            downloadVideo.href = "#";
+        }
+        if (videoFallback) {
+            videoFallback.textContent = "";
+            videoFallback.style.display = "none";
+        }
+        if (guideVideoOutput) {
+            guideVideoOutput.style.display = "none";
+        }
+    }
+
+    function drawScene(ctx, width, height, scene, progress) {
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#0b1020";
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillRect(40, 40, Math.max(0, (width - 80) * progress), 8);
+
+        ctx.fillStyle = "#e2e8f0";
+        ctx.font = "bold 28px sans-serif";
+        ctx.fillText(scene.title || "Step", 40, 100);
+
+        ctx.fillStyle = "#cbd5f5";
+        ctx.font = "20px sans-serif";
+        const text = scene.onScreen || scene.narration || "";
+        const maxWidth = width - 80;
+        const words = text.split(" ");
+        let line = "";
+        let y = 150;
+        words.forEach(word => {
+            const testLine = line + word + " ";
+            const metrics = ctx.measureText(testLine);
+            if (metrics.width > maxWidth && line) {
+                ctx.fillText(line.trim(), 40, y);
+                line = word + " ";
+                y += 28;
+            } else {
+                line = testLine;
+            }
+        });
+        if (line) ctx.fillText(line.trim(), 40, y);
+
+        ctx.fillStyle = "rgba(56, 189, 248, 0.2)";
+        ctx.fillRect(40, height - 80, width - 80, 40);
+        ctx.fillStyle = "#e2e8f0";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("AI Walkthrough Video", 50, height - 53);
+    }
+
+    async function generateVideoFromScenes(scenes) {
+        if (!window.MediaRecorder) {
+            guideStatus.textContent = "Video generation not supported in this browser";
+            if (guideVideoOutput) guideVideoOutput.style.display = "block";
+            if (videoFallback) {
+                videoFallback.textContent = "Your browser does not support MediaRecorder. Use the step list instead.";
+                videoFallback.style.display = "block";
+            }
+            return;
+        }
+        resetVideoOutput();
+
+        if (guideVideoOutput) {
+            guideVideoOutput.style.display = "block";
+        }
+        if (videoFallback) {
+            videoFallback.textContent = "Generating video...";
+            videoFallback.style.display = "block";
+        }
+
+        const canvas = document.createElement("canvas");
+        const width = 960;
+        const height = 540;
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        const stream = canvas.captureStream(30);
+        const preferredTypes = [
+            "video/webm;codecs=vp9",
+            "video/webm;codecs=vp8",
+            "video/webm"
+        ];
+        const mimeType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type)) || "";
+        let recorder;
+        try {
+            recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        } catch (error) {
+            guideStatus.textContent = "Unable to start video recording";
+            if (videoFallback) {
+                videoFallback.textContent = "Video recording failed to initialize in this browser.";
+                videoFallback.style.display = "block";
+            }
+            return;
+        }
+        const chunks = [];
+        recorder.ondataavailable = event => {
+            if (event.data && event.data.size > 0) chunks.push(event.data);
+        };
+
+        recorder.start();
+        for (let i = 0; i < scenes.length; i += 1) {
+            const scene = scenes[i];
+            const durationMs = (guideDurations[i] || 8) * 1000;
+            const start = performance.now();
+            let elapsed = 0;
+            while (elapsed < durationMs) {
+                const progress = Math.min(1, elapsed / durationMs);
+                drawScene(ctx, width, height, scene, progress);
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                elapsed = performance.now() - start;
+            }
+        }
+        recorder.stop();
+
+        await new Promise(resolve => {
+            recorder.onstop = resolve;
+        });
+
+        const blob = new Blob(chunks, { type: "video/webm" });
+        if (!blob.size) {
+            guideStatus.textContent = "Video generation failed";
+            if (videoFallback) {
+                videoFallback.textContent = "No video data was produced. Try another browser.";
+                videoFallback.style.display = "block";
+            }
+            return;
+        }
+        guideVideoBlobUrl = URL.createObjectURL(blob);
+        if (guideVideoPlayer) {
+            guideVideoPlayer.src = guideVideoBlobUrl;
+        }
+        if (downloadVideo) {
+            downloadVideo.href = guideVideoBlobUrl;
+        }
+        if (guideVideoOutput) {
+            guideVideoOutput.style.display = "block";
+        }
+        if (videoFallback) {
+            videoFallback.style.display = "none";
+        }
     }
 
     generateGuideBtn.addEventListener("click", async () => {
@@ -403,7 +688,13 @@
         if (data.success) {
             guideSteps = data.steps || [];
             guideDurations = Array.isArray(data.durations) ? data.durations : [];
+            guideVideo = data.video || null;
+            guideUiSteps = Array.isArray(data.ui_steps) ? data.ui_steps : [];
+            guideVideoNotice = data.video_notice || "";
             renderGuideSteps(guideSteps, data.title || "Walkthrough");
+            if (guideVideo && Array.isArray(guideVideo.scenes) && guideVideo.scenes.length) {
+                await generateVideoFromScenes(guideVideo.scenes);
+            }
             guideStatus.textContent = "";
         } else {
             guideStatus.textContent = data.message || "Unable to generate";
@@ -411,17 +702,26 @@
     });
 
     playGuideBtn.addEventListener("click", () => {
-        if (!guideSteps.length) {
-            guideStatus.textContent = "Generate a walkthrough first";
+        const hasVideo = guideVideo && Array.isArray(guideVideo.scenes) && guideVideo.scenes.length;
+        if (!guideSteps.length && !hasVideo) {
+            guideStatus.textContent = "Generate a walkthrough video first";
             return;
         }
         guideStatus.textContent = "Playing...";
-        const stepElements = Array.from(document.querySelectorAll(".guide-step"));
+        const stepElements = hasVideo
+            ? Array.from(document.querySelectorAll(".video-scene"))
+            : Array.from(document.querySelectorAll(".guide-step"));
         const progressEl = document.getElementById("guideProgress");
+        const playItems = hasVideo
+            ? guideVideo.scenes.map(scene => ({
+                narration: scene.narration || scene.on_screen || "",
+                onScreen: scene.on_screen || scene.narration || ""
+            }))
+            : guideSteps.map(step => ({ narration: step, onScreen: step }));
         let index = 0;
 
         function speakNext() {
-            if (index >= guideSteps.length) {
+            if (index >= playItems.length) {
                 guideStatus.textContent = "Finished";
                 return;
             }
@@ -429,13 +729,13 @@
             const activeEl = stepElements[index];
             if (activeEl) activeEl.classList.add("active");
 
-            const durationMs = (guideDurations[index] || 7) * 1000;
+            const durationMs = (guideDurations[index] || 8) * 1000;
             if (progressEl) {
-                const percent = Math.min(100, Math.round(((index + 1) / guideSteps.length) * 100));
+                const percent = Math.min(100, Math.round(((index + 1) / playItems.length) * 100));
                 progressEl.style.width = `${percent}%`;
             }
 
-            const utterance = new SpeechSynthesisUtterance(guideSteps[index]);
+            const utterance = new SpeechSynthesisUtterance(playItems[index].narration);
             utterance.onend = () => {
                 index += 1;
                 speakNext();
@@ -465,12 +765,14 @@
         chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    chatSend.addEventListener("click", async () => {
+    async function sendChatMessage() {
         const message = chatInput.value.trim();
         if (!message) return;
         appendChatMessage("user", message);
         chatHistory.push({ role: "user", content: message });
         chatInput.value = "";
+        if (chatTyping) chatTyping.style.display = "block";
+        if (chatSend) chatSend.disabled = true;
 
         const response = await safeFetch(`/player/${playerId}/chat`, {
             method: "POST",
@@ -479,12 +781,35 @@
         });
         if (!response) {
             appendChatMessage("assistant", "Backend unavailable");
+            if (chatTyping) chatTyping.style.display = "none";
+            if (chatSend) chatSend.disabled = false;
             return;
         }
         const data = await response.json();
         const reply = data.reply || data.message || "No response";
         appendChatMessage("assistant", reply);
         chatHistory.push({ role: "assistant", content: reply });
+        if (data.guidance && data.guidance.success) {
+            guideSteps = data.guidance.steps || [];
+            guideDurations = Array.isArray(data.guidance.durations) ? data.guidance.durations : [];
+            guideVideo = data.guidance.video || null;
+            guideUiSteps = Array.isArray(data.guidance.ui_steps) ? data.guidance.ui_steps : [];
+            guideVideoNotice = data.guidance.video_notice || "";
+            renderGuideSteps(guideSteps, data.guidance.title || "Walkthrough");
+            if (guideVideo && Array.isArray(guideVideo.scenes) && guideVideo.scenes.length) {
+                await generateVideoFromScenes(guideVideo.scenes);
+            }
+        }
+        if (chatTyping) chatTyping.style.display = "none";
+        if (chatSend) chatSend.disabled = false;
+    }
+
+    chatSend.addEventListener("click", sendChatMessage);
+    chatInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            sendChatMessage();
+        }
     });
 
     saveCompletionBtn.addEventListener("click", async () => {

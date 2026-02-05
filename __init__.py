@@ -127,12 +127,28 @@ app.config['GITHUB_TARGET_TYPE'] = os.environ.get('GITHUB_TARGET_TYPE') or 'user
 app.config['GITHUB_TARGET_NAME'] = os.environ.get('GITHUB_TARGET_NAME') or 'open-coding-society'
 
 
-# Gemini API settings
-app.config['GEMINI_SERVER'] = os.environ.get('GEMINI_SERVER') or 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'
-app.config['GEMINI_API_KEY'] = os.environ.get('GEMINI_API_KEY') or None
+# OpenAI (ChatGPT) settings
+app.config['OPENAI_SERVER'] = os.environ.get('OPENAI_SERVER') or 'https://api.openai.com/v1/chat/completions'
+app.config['OPENAI_API_KEY'] = os.environ.get('OPENAI_API_KEY') or None
+app.config['OPENAI_MODEL'] = os.environ.get('OPENAI_MODEL') or 'gpt-4o-mini'
+
+# PIKA (Video) settings
+app.config['PIKA_SERVER'] = os.environ.get('PIKA_SERVER') or None
+app.config['PIKA_API_KEY'] = os.environ.get('PIKA_API_KEY') or None
+app.config['PIKA_STATUS_SERVER'] = os.environ.get('PIKA_STATUS_SERVER') or None
+app.config['PIKA_MODEL'] = os.environ.get('PIKA_MODEL') or None
 
 # Endgame settings
-app.config['FINAL_CODE_ANSWER'] = os.environ.get('FINAL_CODE_ANSWER') or ''
+app.config['FINAL_CODE_ANSWER'] = os.environ.get('FINAL_CODE_ANSWER') or (
+   "To earn the mastery, you need to do the following: "
+   "You begin by deciding what the final result should represent. "
+   "You gather every action the player made in the order they happened. "
+   "You then create a loop that runs once for each action. "
+   "Each time the loop runs, you read the current action, determine what it means, "
+   "and update the final result. Make sure the loop runs one action to get the badge. "
+   "You should continue looping until there are no actions left. "
+   "When the loop ends, you output the final result."
+)
 
 
 # KASM settings

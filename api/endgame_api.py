@@ -1,6 +1,8 @@
 from datetime import datetime
 import json
 import re
+import time
+from urllib.parse import quote
 
 import requests
 from flask import Blueprint, jsonify, request, current_app
@@ -66,35 +68,194 @@ def _strip_code_blocks(text: str) -> str:
     return " ".join(text.split())
 
 
-def _call_gemini(prompt: str, text: str) -> str:
-    api_key = current_app.config.get("GEMINI_API_KEY")
-    server = current_app.config.get("GEMINI_SERVER")
+def _call_openai(prompt: str, text: str) -> str:
+    api_key = current_app.config.get("OPENAI_API_KEY")
+    model = current_app.config.get("OPENAI_MODEL") or "gpt-4o-mini"
+    server = current_app.config.get("OPENAI_SERVER") or "https://api.openai.com/v1/chat/completions"
     if not api_key or not server:
         return ""
 
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": f"{prompt}\n\n{text}"}
-                ]
-            }
+        "model": model,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": text}
         ]
     }
 
     try:
         response = requests.post(
-            f"{server}?key={api_key}",
-            headers={"Content-Type": "application/json"},
+            server,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            },
             json=payload,
-            timeout=15
+            timeout=20
         )
         if response.status_code != 200:
             return ""
-        gemini_json = response.json()
-        raw_text = gemini_json["candidates"][0]["content"]["parts"][0]["text"]
+        openai_json = response.json()
+        raw_text = openai_json["choices"][0]["message"]["content"]
         return _strip_code_blocks(raw_text)
     except (requests.RequestException, KeyError, IndexError, TypeError):
+        return ""
+
+
+def _find_video_url(payload):
+    if isinstance(payload, str) and payload.startswith("http") and re.search(r"\.(mp4|mov|webm)(\?|$)", payload):
+        return payload
+    if isinstance(payload, dict):
+        for value in payload.values():
+            found = _find_video_url(value)
+            if found:
+                return found
+    if isinstance(payload, list):
+        for item in payload:
+            found = _find_video_url(item)
+            if found:
+                return found
+    return ""
+
+
+def _call_pika_video(prompt: str) -> dict:
+    api_key = current_app.config.get("PIKA_API_KEY")
+    server = current_app.config.get("PIKA_SERVER")
+    status_server = current_app.config.get("PIKA_STATUS_SERVER")
+    model = current_app.config.get("PIKA_MODEL")
+    if not api_key or not server:
+        return {"success": False, "message": "PIKA not configured"}
+
+    payload = {"prompt": prompt}
+    if model:
+        payload["model"] = model
+
+    try:
+        response = requests.post(
+            server,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            },
+            json=payload,
+            timeout=30
+        )
+        if response.status_code != 200:
+            return {"success": False, "message": "PIKA request failed"}
+        pika_json = response.json()
+        video_url = _find_video_url(pika_json)
+        if video_url:
+            return {"success": True, "video_url": video_url}
+
+        request_id = pika_json.get("id") or pika_json.get("request_id") or pika_json.get("job_id")
+        status_url = pika_json.get("status_url")
+        if request_id and status_server and not status_url:
+            status_url = f"{status_server.rstrip('/')}/{request_id}"
+
+        if status_url:
+            for _ in range(2):
+                time.sleep(1.5)
+                status_response = requests.get(
+                    status_url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=20
+                )
+                if status_response.status_code != 200:
+                    continue
+                status_json = status_response.json()
+                status_video_url = _find_video_url(status_json)
+                if status_video_url:
+                    return {"success": True, "video_url": status_video_url}
+
+        return {
+            "success": True,
+            "video_status": "pending",
+            "video_request_id": request_id,
+            "video_status_url": status_url
+        }
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        return {"success": False, "message": "PIKA error"}
+
+
+def _generate_fallback_svg() -> str:
+        svg = """
+        <svg xmlns='http://www.w3.org/2000/svg' width='900' height='320' viewBox='0 0 900 320'>
+            <defs>
+                <linearGradient id='bg' x1='0' x2='1' y1='0' y2='1'>
+                    <stop offset='0%' stop-color='#0f172a'/>
+                    <stop offset='100%' stop-color='#1e293b'/>
+                </linearGradient>
+            </defs>
+            <rect width='900' height='320' fill='url(#bg)' rx='18' />
+            <g font-family='Arial, sans-serif' fill='#e2e8f0' font-size='18'>
+                <text x='30' y='48' font-size='22' font-weight='700'>Problem-Solving Flow</text>
+            </g>
+            <g font-family='Arial, sans-serif' fill='#0f172a' font-size='14' font-weight='700'>
+                <rect x='30' y='80' width='150' height='60' rx='10' fill='#38bdf8'/>
+                <text x='45' y='115'>Define inputs</text>
+                <rect x='210' y='80' width='150' height='60' rx='10' fill='#22d3ee'/>
+                <text x='232' y='115'>Loop steps</text>
+                <rect x='390' y='80' width='150' height='60' rx='10' fill='#a7f3d0'/>
+                <text x='410' y='115'>If / else</text>
+                <rect x='570' y='80' width='150' height='60' rx='10' fill='#fcd34d'/>
+                <text x='585' y='115'>Update result</text>
+                <rect x='750' y='80' width='120' height='60' rx='10' fill='#fca5a5'/>
+                <text x='765' y='115'>Return</text>
+            </g>
+            <g stroke='#94a3b8' stroke-width='4' fill='none'>
+                <path d='M180 110 L210 110'/>
+                <path d='M360 110 L390 110'/>
+                <path d='M540 110 L570 110'/>
+                <path d='M720 110 L750 110'/>
+            </g>
+            <g font-family='Arial, sans-serif' fill='#e2e8f0' font-size='13'>
+                <text x='30' y='200'>Follow this order every time you solve the final challenge.</text>
+                <text x='30' y='225'>Small steps. Clear decisions. Track the result.</text>
+            </g>
+        </svg>
+        """
+        return f"data:image/svg+xml;utf8,{quote(svg)}"
+
+
+def _call_openai_image(prompt: str) -> str:
+    api_key = current_app.config.get("OPENAI_API_KEY")
+    server = current_app.config.get("OPENAI_IMAGE_SERVER") or "https://api.openai.com/v1/images/generations"
+    model = current_app.config.get("OPENAI_IMAGE_MODEL") or "gpt-image-1"
+    size = current_app.config.get("OPENAI_IMAGE_SIZE") or "1024x1024"
+    if not api_key or not server:
+        current_app.logger.warning("OpenAI image generation not configured: missing API key or server")
+        return ""
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "size": size,
+        "response_format": "b64_json"
+    }
+
+    try:
+        response = requests.post(
+            server,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            },
+            json=payload,
+            timeout=30
+        )
+        if response.status_code != 200:
+            current_app.logger.warning(
+                "OpenAI image generation failed with status %s: %s",
+                response.status_code,
+                response.text[:500] if response.text else ""
+            )
+            return ""
+        data = response.json()
+        b64_data = data["data"][0]["b64_json"]
+        return f"data:image/png;base64,{b64_data}"
+    except (requests.RequestException, KeyError, IndexError, TypeError) as exc:
+        current_app.logger.warning("OpenAI image generation error: %s", exc)
         return ""
 
 
@@ -133,9 +294,9 @@ def _grade_final_answer(answer: str) -> dict:
         "If verdict is Incorrect, provide a short explanation and 3-6 numbered fix steps as strings."
     )
 
-    gemini_text = _call_gemini(prompt, f"Student answer:\n{answer}")
-    if gemini_text:
-        parsed = _extract_json(gemini_text)
+    openai_text = _call_openai(prompt, f"Student answer:\n{answer}")
+    if openai_text:
+        parsed = _extract_json(openai_text)
         verdict = (parsed.get("verdict") or "").strip().lower()
         explanation = (parsed.get("explanation") or "").strip()
         steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
@@ -161,70 +322,215 @@ def _grade_final_answer(answer: str) -> dict:
 
 def _generate_guidance(answer: str) -> dict:
     prompt = (
-        "You are a tutoring assistant. Provide a step-by-step walkthrough "
-        "that explains how to build a solution without giving full code or pseudocode. "
+        "You are a tutoring assistant for beginners. Provide a step-by-step walkthrough "
+        "that explains how to build a solution and how the code is written, without giving full code or pseudocode. "
+        "Use this structure in order: define inputs → loop through steps → decide with if/else → "
+        "update result → return. "
+        "Include UI guidance for a confused learner (what to click or do next). "
         "Return ONLY valid JSON with this schema: "
-        "{\"title\":string,\"steps\":string[]}\n"
+        "{\"title\":string,\"steps\":string[],\"ui_steps\":string[],"
+        "\"video\":{\"title\":string,\"scenes\":[{\"title\":string,\"narration\":string,\"on_screen\":string}]}}\n"
         "Keep steps short, actionable, and avoid revealing a full solution."
     )
 
-    gemini_text = _call_gemini(prompt, f"Student context:\n{answer}")
-    if gemini_text:
-        parsed = _extract_json(gemini_text)
+    openai_text = _call_openai(prompt, f"Student context:\n{answer}")
+    if openai_text:
+        parsed = _extract_json(openai_text)
         title = (parsed.get("title") or "Walkthrough").strip() or "Walkthrough"
         steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
+        ui_steps = parsed.get("ui_steps") if isinstance(parsed.get("ui_steps"), list) else []
         cleaned_steps = [
             _strip_code_blocks(str(step)).strip()
             for step in steps
             if str(step).strip()
         ]
+        cleaned_ui_steps = [
+            _strip_code_blocks(str(step)).strip()
+            for step in ui_steps
+            if str(step).strip()
+        ]
+        video = parsed.get("video") if isinstance(parsed.get("video"), dict) else {}
+        video_title = _strip_code_blocks(str(video.get("title") or f"{title} Video")).strip() or f"{title} Video"
+        scenes = video.get("scenes") if isinstance(video.get("scenes"), list) else []
+        cleaned_scenes = []
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            scene_title = _strip_code_blocks(str(scene.get("title") or "")).strip() or "Step"
+            narration = _strip_code_blocks(str(scene.get("narration") or "")).strip()
+            on_screen = _strip_code_blocks(str(scene.get("on_screen") or "")).strip()
+            if narration or on_screen:
+                cleaned_scenes.append({
+                    "title": scene_title,
+                    "narration": narration or on_screen,
+                    "on_screen": on_screen or narration
+                })
+
+        if not cleaned_scenes and cleaned_steps:
+            cleaned_scenes = [
+                {"title": f"Step {index + 1}", "narration": step, "on_screen": step}
+                for index, step in enumerate(cleaned_steps[:8])
+            ]
+        video_notice = "Generated step-by-step video narration from your walkthrough."
+
         if cleaned_steps:
             durations = [7 for _ in cleaned_steps[:8]]
-            return {"success": True, "title": title, "steps": cleaned_steps[:8], "durations": durations}
+            return {
+                "success": True,
+                "title": title,
+                "steps": cleaned_steps[:8],
+                "durations": durations,
+                "ui_steps": cleaned_ui_steps[:6],
+                "video": {
+                    "title": video_title,
+                    "scenes": cleaned_scenes[:8]
+                },
+                "video_notice": video_notice
+            }
 
     fallback_steps = [
-        "Identify the inputs, outputs, and any constraints.",
-        "Break the task into smaller logical steps.",
-        "Define the data structures you need for tracking progress.",
-        "Write the main loop or flow that processes each step.",
-        "Handle edge cases and invalid inputs.",
-        "Test with small examples and refine."
+        "Define the inputs and what the final result should represent.",
+        "Loop through each step or action in order.",
+        "Use if/else decisions to interpret the current step.",
+        "Update the running result based on that decision.",
+        "Return or output the final result at the end."
     ]
+    fallback_ui_steps = [
+        "Type your current understanding into the answer box.",
+        "Click Generate Walkthrough to get guided steps.",
+        "Click Play Walkthrough to follow the steps with audio.",
+        "Revise your answer and press Check Answer.",
+        "If correct, click Save Completion."
+    ]
+    fallback_scenes = [
+        {"title": "Inputs", "narration": "Define the inputs and expected output.", "on_screen": "Define inputs and expected output."},
+        {"title": "Loop", "narration": "Loop through each step in order and track progress.", "on_screen": "Loop through steps."},
+        {"title": "Decide", "narration": "Use if/else decisions to interpret each step.", "on_screen": "Decide with if/else."},
+        {"title": "Update", "narration": "Update the running result after each decision.", "on_screen": "Update the result."},
+        {"title": "Return", "narration": "Return the final result after the loop.", "on_screen": "Return the final result."}
+    ]
+    fallback_notice = "Generated step-by-step video narration from fallback guidance."
     return {
         "success": True,
         "title": "Walkthrough",
         "steps": fallback_steps,
-        "durations": [7 for _ in fallback_steps]
+        "durations": [7 for _ in fallback_steps],
+        "ui_steps": fallback_ui_steps,
+        "video": {
+            "title": "Walkthrough Video",
+            "scenes": fallback_scenes
+        },
+        "video_notice": fallback_notice
     }
 
 
 def _chat_response(message: str, history: list) -> dict:
-    lowered = message.lower()
-    if "code example" in lowered or "full code" in lowered or "write the code" in lowered:
+    lowered = (message or "").lower()
+    if not lowered.strip():
         return {
             "success": True,
-            "reply": "I can’t share full code. I can guide you step-by-step or help debug a specific part. What’s the first step you’re unsure about?"
+            "reply": "I’m here to help—what part of the logic or requirements is confusing you?"
+        }
+
+    if any(phrase in lowered for phrase in [
+        "need help",
+        "i need help",
+        "help me",
+        "help"
+    ]):
+        guidance = _generate_guidance(message)
+        return {
+            "success": True,
+            "reply": (
+                "I’ve generated a step-by-step walkthrough with visuals. "
+                "Use the guidance panel to follow along, and ask if a specific step is confusing."
+            ),
+            "guidance": guidance
+        }
+
+    if any(phrase in lowered for phrase in [
+        "video",
+        "show me",
+        "animate",
+        "visual",
+        "walkthrough video",
+        "demo"
+    ]):
+        history_text = ""
+        for item in history[-8:]:
+            role = (item.get("role") or "user").capitalize()
+            content = item.get("content") or ""
+            history_text += f"{role}: {content}\n"
+        video_prompt = (
+            "Create a short, friendly educational video summarizing the student's journey in a coding maze game. "
+            "Highlight key choices, what they learned, and the outcome in simple language. "
+            f"Conversation context:\n{history_text}\nUser request: {message}"
+        )
+        video_result = _call_pika_video(video_prompt)
+        if video_result.get("success") and video_result.get("video_url"):
+            return {
+                "success": True,
+                "reply": "Here’s a short video summary of your game journey.",
+                "video_url": video_result.get("video_url")
+            }
+        if video_result.get("video_status") == "pending":
+            return {
+                "success": True,
+                "reply": "Your video is generating. Please ask again in a moment.",
+                "video_status": "pending"
+            }
+        return {
+            "success": True,
+            "reply": "I couldn’t generate a video right now. Please try again in a moment."
+        }
+
+    if any(phrase in lowered for phrase in [
+        "full code",
+        "complete solution",
+        "write the code",
+        "give me the answer",
+        "final answer",
+        "code example"
+    ]):
+        return {
+            "success": True,
+            "reply": (
+                "I can’t provide a full solution, but I can guide you step‑by‑step. "
+                "Tell me what you’ve tried and which step feels stuck."
+            )
         }
 
     prompt = (
-        "You are an interactive tutor helping a student write code. "
-        "Do NOT provide full code or pseudocode. Ask clarifying questions and provide hints. "
-        "Keep responses short and actionable."
+        "You are a ChatGPT‑style tutoring assistant for a student coding maze endgame. "
+        "Be friendly, concise, and practical. Do NOT provide full code or pseudocode. "
+        "Assume the student is confused and needs step‑by‑step UI guidance. "
+        "If helpful, suggest which UI button to click next (Generate Walkthrough, Play Walkthrough, "
+        "Check Answer, Save Completion). "
+        "Focus on the student’s journey: what they tried, learned, and chose. "
+        "Ask focused, game‑context questions (actions taken, decision points, outcomes) and give next steps. "
+        "Respond in this format:\n"
+        "Summary: <1–2 short sentences>\n"
+        "Guidance: <2–4 bullet points>\n"
+        "Checkpoint: <one short question about their in‑game choices or learning>\n"
+        "Keep the total response under 120 words."
     )
-
     history_text = ""
-    for item in history[-6:]:
+    for item in history[-10:]:
         role = (item.get("role") or "user").capitalize()
         content = item.get("content") or ""
         history_text += f"{role}: {content}\n"
 
-    gemini_text = _call_gemini(prompt, f"Conversation:\n{history_text}\nUser: {message}")
-    if gemini_text:
-        return {"success": True, "reply": _strip_code_blocks(gemini_text).strip()}
+    openai_text = _call_openai(prompt, f"Conversation:\n{history_text}\nUser: {message}")
+    if openai_text:
+        return {"success": True, "reply": _strip_code_blocks(openai_text).strip()}
 
     return {
         "success": True,
-        "reply": "I can help with hints. What part of the logic is confusing?"
+        "reply": (
+            "Summary: I can help you connect your game journey to the final solution.\n"
+            "Guidance: • Describe the last challenge you completed • Share one key choice you made and why • Note what you learned from that step\n"
+            "Checkpoint: Which in‑game decision felt most important to your answer?"
+        )
     }
 
 
