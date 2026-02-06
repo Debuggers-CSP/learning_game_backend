@@ -2,9 +2,12 @@
 
 from flask import Blueprint, request, jsonify, session
 from model.robop_user import RobopUser, BadgeThreshold, UserBadge, StationHint
+from model.pseudocode_bank import PseudocodeQuestionBank
 from datetime import datetime
 import requests
 import json
+import os
+import re
 
 from __init__ import db
 
@@ -21,6 +24,10 @@ def _pick(data, *keys, default=None):
             return data[k]
     return default
 
+
+# ---------------------------
+# AUTH ROUTES
+# ---------------------------
 
 @robop_api.route("/register", methods=["POST"])
 def register():
@@ -81,7 +88,6 @@ def login():
             "message": "Invalid credentials."
         }), 401
 
-    # Server session (optional, but useful)
     session["robop_uid"] = user.uid
     user.touch_login()
 
@@ -112,25 +118,25 @@ def me():
     return jsonify({"success": True, "user": user.to_dict()}), 200
 
 
-# --- APPENDED: NEW BADGE ROUTES ---
+# ---------------------------
+# BADGES
+# ---------------------------
 
 @robop_api.route("/badge_thresholds", methods=["GET"])
 def get_thresholds():
-    """Returns the list of badge criteria for the frontend to loop through."""
     thresholds = BadgeThreshold.query.order_by(BadgeThreshold._threshold.desc()).all()
     return jsonify([t.to_dict() for t in thresholds]), 200
 
 
 @robop_api.route("/assign_badge", methods=["POST"])
 def assign_badge():
-    """Saves an earned badge to the database for the logged-in user."""
     uid = session.get("robop_uid")
     if not uid:
         return jsonify({"success": False, "message": "Not logged in"}), 401
-    
+
     user = RobopUser.query.filter_by(_uid=uid).first()
     data = _get_json()
-    
+
     sector_id = data.get("sector_id")
     score = data.get("score")
     badge_name = data.get("badge_name")
@@ -148,27 +154,191 @@ def assign_badge():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-# --- NEW: AUTOFILL ENDPOINT ---
+# ---------------------------
+# AUTOFILL (SECTORS + PSEUDOCODE BANK)
+# ---------------------------
+
+def _normalize(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def _requires(prompt: str):
+    """
+    Mirror of your pseudocode_bank_api requirement detector.
+    Keep consistent with the grader so autofill passes the checker.
+    """
+    p = _normalize(prompt)
+    req = []
+
+    if "input" in p:
+        req.append("input")
+    if "display" in p or "output" in p or "print" in p:
+        req.append("output")
+
+    if "if" in p or "otherwise" in p or "else" in p:
+        req.append("if")
+    if "for " in p or "from" in p or "times" in p or "1 to" in p or "1.." in p:
+        req.append("loop")
+    if ("write " in p) or ("returns" in p) or ("return" in p) or (("(" in p and ")" in p and "write" in p)):
+        req.append("function")
+    if "return" in p or "returns" in p:
+        req.append("return")
+
+    if "list" in p:
+        req.append("list")
+    if "string" in p:
+        req.append("string")
+
+    if ('"even"' in p) or (" even " in p and '"odd"' in p) or (" odd " in p):
+        req.append("even_odd_words")
+    if '"hot"' in p:
+        req.append("hot_word")
+    if '"apcsp"' in p:
+        req.append("apcsp_word")
+
+    return req
+
+
+def _autofill_pseudocode_from_prompt(question_text: str) -> str:
+    """
+    Generates a *minimal* pseudocode answer that satisfies your rule-based grader:
+    - includes required keywords/constructs detected by _requires()
+    - not guaranteed logically perfect for every problem, but designed to PASS your checker.
+    """
+    q = question_text or ""
+    reqs = _requires(q)
+
+    lines = []
+
+    # Function wrapper if needed
+    if "function" in reqs:
+        lines.append("FUNCTION Solve(x)")
+    else:
+        lines.append("// Pseudocode Answer")
+
+    # Input requirement
+    if "input" in reqs:
+        lines.append("INPUT x")
+
+    # Setup list/string placeholders if needed
+    if "list" in reqs:
+        lines.append("L ← []  // list")
+        lines.append("APPEND(L, x)")
+
+    if "string" in reqs:
+        lines.append("s ← x  // string")
+
+    # If/else requirement
+    if "if" in reqs:
+        # include special literals if required
+        cond = "x > 0"
+        if "apcsp_word" in reqs:
+            cond = 'x = "APCSP"'
+        lines.append(f"IF {cond}")
+        if "even_odd_words" in reqs:
+            lines.append('  DISPLAY "EVEN"')
+        elif "hot_word" in reqs:
+            lines.append('  DISPLAY "Hot"')
+        else:
+            lines.append("  DISPLAY x")
+        lines.append("ELSE")
+        if "even_odd_words" in reqs:
+            lines.append('  DISPLAY "ODD"')
+        elif "hot_word" in reqs:
+            lines.append('  DISPLAY "Not hot"')
+        elif "apcsp_word" in reqs:
+            lines.append('  DISPLAY "NO"')
+        else:
+            lines.append("  DISPLAY 0")
+        lines.append("END IF")
+
+    # Loop requirement
+    if "loop" in reqs:
+        lines.append("FOR i ← 1 TO 5")
+        lines.append("  // do something")
+        if "output" in reqs and "if" not in reqs:
+            lines.append("  DISPLAY i")
+        lines.append("END FOR")
+
+    # Output requirement (if not already satisfied)
+    if "output" in reqs and "if" not in reqs and "loop" not in reqs:
+        if "apcsp_word" in reqs:
+            lines.append('DISPLAY "APCSP"')
+        elif "hot_word" in reqs:
+            lines.append('DISPLAY "Hot"')
+        else:
+            lines.append("DISPLAY x")
+
+    # Return requirement
+    if "return" in reqs:
+        lines.append("RETURN x")
+
+    # Close function if opened
+    if "function" in reqs:
+        lines.append("END FUNCTION")
+
+    return "\n".join(lines).strip()
+
 
 @robop_api.route("/autofill", methods=["POST"])
 def autofill_answer():
     """
-    Returns the correct answer for a given sector and question.
-    Request body: { "sector_id": 1-5, "question_num": 0-2 }
-    Response: { "success": true, "answer": "..." }
+    Supports TWO request styles:
+
+    1) Station/Sector autofill (your old behavior):
+       Request body: { "sector_id": 1-5, "question_num": 0-2 }
+       Response: { success, answer }
+
+    2) Pseudocode bank autofill (NEW):
+       Request body: { "question_id": <int>, "level": "level1".."level5" (optional) }
+       Response: { success, answer, question_text }
     """
     data = _get_json()
+
+    # --- NEW: Pseudocode bank autofill path ---
+    if data.get("question_id") is not None:
+        try:
+            qid = int(data.get("question_id"))
+        except Exception:
+            return jsonify({"success": False, "message": "question_id must be an integer"}), 400
+
+        level = data.get("level")  # optional: "level1"..."level5"
+        row = PseudocodeQuestionBank.query.get(qid)
+        if not row:
+            return jsonify({"success": False, "message": "Question not found"}), 404
+
+        question_text = None
+        if level and hasattr(row, level):
+            question_text = getattr(row, level)
+        else:
+            # find first populated column
+            for col in ["level1", "level2", "level3", "level4", "level5"]:
+                val = getattr(row, col, None)
+                if val:
+                    question_text = val
+                    level = col
+                    break
+
+        if not question_text:
+            return jsonify({"success": False, "message": "Question text not found"}), 404
+
+        answer = _autofill_pseudocode_from_prompt(question_text)
+
+        return jsonify({
+            "success": True,
+            "answer": answer,
+            "question_id": qid,
+            "level": level,
+            "question_text": question_text
+        }), 200
+
+    # --- OLD: Sector/Q# autofill path ---
     sector_id = data.get("sector_id")
     question_num = data.get("question_num")
-    
+
     if sector_id is None or question_num is None:
-        return jsonify({"success": False, "message": "Missing sector_id or question_num"}), 400
-    
-    # Define correct answers for each sector and question
-    # Question 0: Robot Simulation Code
-    # Question 1: Pseudocode Function
-    # Question 2: MCQ Answer Index
-    
+        return jsonify({"success": False, "message": "Missing sector_id/question_num OR question_id"}), 400
+
     answers = {
         1: {
             0: "robot.MoveForward(4);\nrobot.TurnRight();\nrobot.MoveForward(4);",
@@ -179,7 +349,7 @@ def autofill_answer():
   }
   return sum / nums.length;
 }""",
-            2: 0  # "13" is the correct answer for "1101 binary?"
+            2: 0
         },
         2: {
             0: "robot.MoveForward(4);\nrobot.TurnLeft();\nrobot.MoveForward(4);",
@@ -192,7 +362,7 @@ def autofill_answer():
   }
   return count;
 }""",
-            2: 0  # "Both" is correct for AND logic
+            2: 0
         },
         3: {
             0: "robot.MoveForward(2);\nrobot.TurnRight();\nrobot.MoveForward(4);\nrobot.TurnRight();\nrobot.MoveForward(2);",
@@ -205,7 +375,7 @@ def autofill_answer():
   }
   return max;
 }""",
-            2: 0  # "Hide detail" is correct for abstraction
+            2: 0
         },
         4: {
             0: "robot.MoveForward(4);",
@@ -217,7 +387,7 @@ def autofill_answer():
   }
   return list;
 }""",
-            2: 0  # "Routing" is correct for IP Protocol
+            2: 0
         },
         5: {
             0: "robot.TurnRight();\nrobot.MoveForward(2);\nrobot.TurnLeft();\nrobot.MoveForward(4);\nrobot.TurnLeft();\nrobot.MoveForward(2);",
@@ -230,16 +400,15 @@ def autofill_answer():
   }
   return evens;
 }""",
-            2: 0  # "Rule of thumb" is correct for heuristics
+            2: 0
         }
     }
-    
-    # Check if sector and question exist
+
     if sector_id not in answers or question_num not in answers[sector_id]:
         return jsonify({"success": False, "message": "Invalid sector or question number"}), 404
-    
+
     answer = answers[sector_id][question_num]
-    
+
     return jsonify({
         "success": True,
         "answer": answer,
@@ -248,20 +417,25 @@ def autofill_answer():
     }), 200
 
 
-# --- NEW: AI HINT GENERATION FUNCTIONS ---
+# ---------------------------
+# AI HINTS
+# ---------------------------
 
 def call_ai_api(question_text):
-    """Calls an AI API to generate hints for a given question."""
-    # IMPORTANT: Replace with your actual API key
-    api_key = "YOUR API KEY HERE"
-    
-    # You can choose between Groq or OpenAI
-    # Option 1: Groq API
+    """
+    Calls an AI API to generate hints for a given question.
+    Uses env var GROQ_API_KEY if available.
+    """
+    api_key = os.getenv("GROQ_API_KEY", "YOUR API KEY HERE")
+
     url = "https://api.groq.com/openai/v1/chat/completions"
-    
-    # Logic: Ask AI to help with the specific question
-    prompt = f"Provide a list of 3 short hints for the following programming question. Each hint should be a single concise sentence. Return ONLY a JSON array of strings, nothing else.\n\nQuestion: {question_text}"
-    
+
+    prompt = (
+        "Provide a list of 3 short hints for the following programming question. "
+        "Each hint should be a single concise sentence. Return ONLY a JSON array of strings, nothing else.\n\n"
+        f"Question: {question_text}"
+    )
+
     try:
         response = requests.post(
             url,
@@ -275,83 +449,71 @@ def call_ai_api(question_text):
                 "temperature": 0.7,
                 "max_tokens": 150
             },
-            timeout=10  # Timeout after 10 seconds
+            timeout=10
         )
-        
+
         if response.status_code != 200:
-            # Fallback to mock hints if API fails
-            return ["Think about the steps needed to solve this problem.", 
-                   "Consider edge cases in your solution.", 
-                   "Review similar examples you've seen before."]
-        
-        # Try to parse the response as JSON
+            return [
+                "Think about the steps needed to solve this problem.",
+                "Consider edge cases in your solution.",
+                "Review similar examples you've seen before."
+            ]
+
         content = response.json()["choices"][0]["message"]["content"].strip()
-        
-        # Clean up the response (sometimes LLMs add extra text)
+
         if content.startswith("```json"):
             content = content[7:]
         if content.endswith("```"):
             content = content[:-3]
         content = content.strip()
-        
-        # Parse the JSON list
+
         hints = json.loads(content)
-        
-        # Ensure we have exactly 3 hints
+
         if isinstance(hints, list) and len(hints) >= 3:
             return hints[:3]
-        else:
-            # Fallback
-            return ["Break the problem into smaller parts.", 
-                   "Think about the expected output format.", 
-                   "Try to explain the solution in your own words first."]
-    
+
+        return [
+            "Break the problem into smaller parts.",
+            "Think about the expected output format.",
+            "Try to explain the solution in your own words first."
+        ]
+
     except Exception as e:
-        # If API call fails, return default hints
         print(f"AI API Error: {e}")
-        return ["Consider the input requirements.", 
-               "Think about the algorithm steps.", 
-               "Test your solution with sample inputs."]
+        return [
+            "Consider the input requirements.",
+            "Think about the algorithm steps.",
+            "Test your solution with sample inputs."
+        ]
 
-
-# --- NEW: GET HINT ENDPOINT (USING SELECTION) ---
 
 @robop_api.route("/get_hint", methods=["POST"])
 def get_hint():
-    """
-    Uses SELECTION (if/else) to decide whether to fetch from DB or trigger AI.
-    Request body: { "module_key": "s1_m0", "question": "...", "attempt": 0-2 }
-    Response: { "success": true, "hint": "..." }
-    """
     data = _get_json()
     key = data.get("module_key")
-    q_text = data.get("question")  # Grabs the question from the screen
+    q_text = data.get("question")
     idx = data.get("attempt")
-    
+
     if not key or not q_text or idx is None:
         return jsonify({
             "success": False,
             "message": "Missing module_key, question, or attempt index"
         }), 400
-    
-    # SELECTION: Check if we have already saved these hints in our List
+
     entry = StationHint.query.filter_by(module_key=key).first()
-    
+
     if not entry:
-        # If not in DB, call the 3rd Party AI Procedure
         new_hints = call_ai_api(q_text)
         entry = StationHint(key=key, hints=new_hints)
         db.session.add(entry)
         db.session.commit()
-    
-    # Check if attempt index is valid
+
     if idx < 0 or idx >= len(entry.hint_collection):
         return jsonify({
             "success": False,
             "message": f"Invalid attempt index. Must be between 0 and {len(entry.hint_collection)-1}"
         }), 400
-    
-    # Output the specific hint requested
+
     return jsonify({
         "success": True,
         "hint": entry.hint_collection[idx],
@@ -363,38 +525,30 @@ def get_hint():
 
 @robop_api.route("/generate_hints", methods=["POST"])
 def generate_hints():
-    """
-    Generates AI hints for a question and stores them in the database.
-    Request body: { "module_key": "s1_m0", "question_text": "..." }
-    Response: { "success": true, "hints": ["hint1", "hint2", "hint3"] }
-    """
     data = _get_json()
     module_key = data.get("module_key")
     question_text = data.get("question_text")
-    
+
     if not module_key or not question_text:
         return jsonify({
-            "success": False, 
+            "success": False,
             "message": "Missing module_key or question_text"
         }), 400
-    
-    # Check if hints already exist for this module
+
     existing = StationHint.query.filter_by(module_key=module_key).first()
     if existing:
-        # Return existing hints from database
         return jsonify({
             "success": True,
             "hints": existing.hint_collection,
             "cached": True
         }), 200
-    
-    # Generate new hints using AI
+
     try:
         hint_list = call_ai_api(question_text)
         new_entry = StationHint(key=module_key, hints=hint_list)
         db.session.add(new_entry)
         db.session.commit()
-        
+
         return jsonify({
             "success": True,
             "hints": hint_list,
