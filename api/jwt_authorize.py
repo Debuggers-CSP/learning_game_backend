@@ -22,6 +22,9 @@ def token_required(roles=None):
     def decorator(func_to_guard):
         @wraps(func_to_guard)
         def decorated(*args, **kwargs):
+            # If this is a CORS preflight request, return 200 OK immediately
+            if request.method == 'OPTIONS':
+                return ('', 200)
             token = request.cookies.get(current_app.config["JWT_TOKEN_NAME"])
             if not token:
                 return {
@@ -62,9 +65,7 @@ def token_required(roles=None):
                     "error": str(e)
                 }, 500
 
-            # If this is a CORS preflight request, return 200 OK immediately
-            if request.method == 'OPTIONS':
-                return ('', 200)
+            
 
             # Success, return to the decorated function
             # func_to_guard is the function with the @token_required

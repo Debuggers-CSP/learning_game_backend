@@ -1,6 +1,6 @@
 # api/robop_api.py
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, make_response
 from model.robop_user import RobopUser, BadgeThreshold, UserBadge, StationHint
 from model.pseudocode_bank import PseudocodeQuestionBank
 import requests
@@ -13,9 +13,12 @@ from __init__ import db
 robop_api = Blueprint("robop_api", __name__, url_prefix="/api/robop")
 
 
+# ----------------------------
+# Helpers
+# ----------------------------
+
 def _get_json():
     return request.get_json(silent=True) or {}
-
 
 def _pick(data, *keys, default=None):
     for k in keys:
@@ -23,6 +26,40 @@ def _pick(data, *keys, default=None):
             return data[k]
     return default
 
+def _preflight_ok():
+    """Return an empty 204 for CORS preflight. Flask-CORS will attach headers."""
+    resp = make_response("", 204)
+    return resp
+
+def _require_session_uid():
+    """Return (uid, error_response)."""
+    uid = session.get("robop_uid")
+    if not uid:
+        return None, (jsonify({"success": False, "message": "Not logged in."}), 401)
+    return uid, None
+
+
+# ----------------------------
+# CORS preflight routes (optional but VERY helpful)
+# ----------------------------
+# Browsers may preflight POSTs with JSON. These handlers prevent 405/401 issues.
+
+@robop_api.route("/login", methods=["OPTIONS"])
+@robop_api.route("/logout", methods=["OPTIONS"])
+@robop_api.route("/me", methods=["OPTIONS"])
+@robop_api.route("/register", methods=["OPTIONS"])
+@robop_api.route("/assign_badge", methods=["OPTIONS"])
+@robop_api.route("/badge_thresholds", methods=["OPTIONS"])
+@robop_api.route("/autofill", methods=["OPTIONS"])
+@robop_api.route("/get_hint", methods=["OPTIONS"])
+@robop_api.route("/generate_hints", methods=["OPTIONS"])
+def robop_preflight():
+    return _preflight_ok()
+
+
+# ----------------------------
+# Auth / session endpoints
+# ----------------------------
 
 # ---------------------------
 # AUTH ROUTES
@@ -87,39 +124,51 @@ def login():
             "message": "Invalid credentials."
         }), 401
 
+    # ✅ Set server-side session (stored in cookie)
     session["robop_uid"] = user.uid
+    session.permanent = True            # optional, if you want persistence
+    session.modified = True             # ensure Set-Cookie is issued
+
     user.touch_login()
 
-    return jsonify({
+    resp = jsonify({
         "success": True,
         "message": "Login successful.",
         "user": user.to_dict()
-    }), 200
+    })
+
+    # If you ever want to manually set cookie attributes, do it here,
+    # but normally you should set these in app.config:
+    # SESSION_COOKIE_SAMESITE="None", SESSION_COOKIE_SECURE=True
+    return resp, 200
 
 
 @robop_api.route("/logout", methods=["POST"])
 def logout():
+    # ✅ Clear cookie-backed session
     session.pop("robop_uid", None)
+    session.modified = True
     return jsonify({"success": True, "message": "Logged out."}), 200
 
 
 @robop_api.route("/me", methods=["GET"])
 def me():
-    uid = session.get("robop_uid")
-    if not uid:
-        return jsonify({"success": False, "message": "Not logged in."}), 401
+    uid, err = _require_session_uid()
+    if err:
+        return err
 
     user = RobopUser.query.filter_by(_uid=uid).first()
     if not user:
         session.pop("robop_uid", None)
+        session.modified = True
         return jsonify({"success": False, "message": "Session invalid."}), 401
 
     return jsonify({"success": True, "user": user.to_dict()}), 200
 
 
-# ---------------------------
-# BADGES
-# ---------------------------
+# ----------------------------
+# Badge routes (require session)
+# ----------------------------
 
 @robop_api.route("/badge_thresholds", methods=["GET"])
 def get_thresholds():
@@ -129,13 +178,17 @@ def get_thresholds():
 
 @robop_api.route("/assign_badge", methods=["POST"])
 def assign_badge():
-    uid = session.get("robop_uid")
-    if not uid:
-        return jsonify({"success": False, "message": "Not logged in"}), 401
+    uid, err = _require_session_uid()
+    if err:
+        return err
 
     user = RobopUser.query.filter_by(_uid=uid).first()
-    data = _get_json()
+    if not user:
+        session.pop("robop_uid", None)
+        session.modified = True
+        return jsonify({"success": False, "message": "Session invalid."}), 401
 
+    data = _get_json()
     sector_id = data.get("sector_id")
     score = data.get("score")
     badge_name = data.get("badge_name")
@@ -144,7 +197,12 @@ def assign_badge():
         return jsonify({"success": False, "message": "Missing badge data"}), 400
 
     try:
-        new_badge = UserBadge(user_id=user.id, sector_id=sector_id, score=score, badge_name=badge_name)
+        new_badge = UserBadge(
+            user_id=user.id,
+            sector_id=sector_id,
+            score=score,
+            badge_name=badge_name
+        )
         db.session.add(new_badge)
         db.session.commit()
         return jsonify({"success": True, "message": f"Badge '{badge_name}' saved!"}), 201
@@ -340,7 +398,7 @@ def autofill_answer():
     question_num = data.get("question_num")
 
     if sector_id is None or question_num is None:
-        return jsonify({"success": False, "message": "Missing sector_id/question_num OR question_id"}), 400
+        return jsonify({"success": False, "message": "Missing sector_id or question_num"}), 400
 
     answers = {
         1: {
@@ -372,6 +430,8 @@ def autofill_answer():
 
     if sector_id not in answers or question_num not in answers[sector_id]:
         return jsonify({"success": False, "message": "Invalid sector or question number"}), 404
+
+    answer = answers[sector_id][question_num]
 
     return jsonify({
         "success": True,
