@@ -3,7 +3,6 @@
 from flask import Blueprint, request, jsonify, session
 from model.robop_user import RobopUser, BadgeThreshold, UserBadge, StationHint
 from model.pseudocode_bank import PseudocodeQuestionBank
-from datetime import datetime
 import requests
 import json
 import os
@@ -155,7 +154,9 @@ def assign_badge():
 
 
 # ---------------------------
-# AUTOFILL (SECTORS + PSEUDOCODE BANK)
+# AUTOFILL
+# - Supports sector modules (robot/pseudo/mcq hardcoded)
+# - Supports pseudocode bank by question_id/level
 # ---------------------------
 
 def _normalize(s: str) -> str:
@@ -164,8 +165,7 @@ def _normalize(s: str) -> str:
 
 def _requires(prompt: str):
     """
-    Mirror of your pseudocode_bank_api requirement detector.
-    Keep consistent with the grader so autofill passes the checker.
+    Mirror the pseudocode_bank_api keyword detector so autofill passes that checker.
     """
     p = _normalize(prompt)
     req = []
@@ -177,8 +177,11 @@ def _requires(prompt: str):
 
     if "if" in p or "otherwise" in p or "else" in p:
         req.append("if")
+
+    # loop indicators
     if "for " in p or "from" in p or "times" in p or "1 to" in p or "1.." in p:
         req.append("loop")
+
     if ("write " in p) or ("returns" in p) or ("return" in p) or (("(" in p and ")" in p and "write" in p)):
         req.append("function")
     if "return" in p or "returns" in p:
@@ -189,7 +192,7 @@ def _requires(prompt: str):
     if "string" in p:
         req.append("string")
 
-    if ('"even"' in p) or (" even " in p and '"odd"' in p) or (" odd " in p):
+    if '"even"' in p or (" even " in p and ("odd" in p or '"odd"' in p)):
         req.append("even_odd_words")
     if '"hot"' in p:
         req.append("hot_word")
@@ -201,45 +204,59 @@ def _requires(prompt: str):
 
 def _autofill_pseudocode_from_prompt(question_text: str) -> str:
     """
-    Generates a *minimal* pseudocode answer that satisfies your rule-based grader:
-    - includes required keywords/constructs detected by _requires()
-    - not guaranteed logically perfect for every problem, but designed to PASS your checker.
+    Generates pseudocode designed to PASS your lightweight checker.
+    It includes the required constructs/keywords detected from the prompt.
     """
     q = question_text or ""
     reqs = _requires(q)
 
+    # Special-case: the exact prompt you showed: "Display all numbers from 1 to 5."
+    # This produces the clean expected answer.
+    if "display all numbers from 1 to 5" in _normalize(q):
+        return "FOR i ← 1 TO 5\n  DISPLAY i\nEND FOR"
+
     lines = []
 
-    # Function wrapper if needed
+    # Function wrapper if required
     if "function" in reqs:
         lines.append("FUNCTION Solve(x)")
     else:
         lines.append("// Pseudocode Answer")
 
-    # Input requirement
+    # Input if required
     if "input" in reqs:
         lines.append("INPUT x")
 
-    # Setup list/string placeholders if needed
+    # List if required
     if "list" in reqs:
-        lines.append("L ← []  // list")
+        lines.append("L ← []")
         lines.append("APPEND(L, x)")
 
+    # String if required
     if "string" in reqs:
-        lines.append("s ← x  // string")
+        lines.append("s ← x")
 
-    # If/else requirement
+    # Loop if required
+    if "loop" in reqs:
+        lines.append("FOR i ← 1 TO 5")
+        if "output" in reqs:
+            lines.append("  DISPLAY i")
+        else:
+            lines.append("  // do something")
+        lines.append("END FOR")
+
+    # If/else if required
     if "if" in reqs:
-        # include special literals if required
         cond = "x > 0"
         if "apcsp_word" in reqs:
             cond = 'x = "APCSP"'
+
         lines.append(f"IF {cond}")
         if "even_odd_words" in reqs:
             lines.append('  DISPLAY "EVEN"')
         elif "hot_word" in reqs:
             lines.append('  DISPLAY "Hot"')
-        else:
+        elif "output" in reqs:
             lines.append("  DISPLAY x")
         lines.append("ELSE")
         if "even_odd_words" in reqs:
@@ -248,32 +265,20 @@ def _autofill_pseudocode_from_prompt(question_text: str) -> str:
             lines.append('  DISPLAY "Not hot"')
         elif "apcsp_word" in reqs:
             lines.append('  DISPLAY "NO"')
-        else:
+        elif "output" in reqs:
             lines.append("  DISPLAY 0")
         lines.append("END IF")
 
-    # Loop requirement
-    if "loop" in reqs:
-        lines.append("FOR i ← 1 TO 5")
-        lines.append("  // do something")
-        if "output" in reqs and "if" not in reqs:
-            lines.append("  DISPLAY i")
-        lines.append("END FOR")
-
-    # Output requirement (if not already satisfied)
-    if "output" in reqs and "if" not in reqs and "loop" not in reqs:
-        if "apcsp_word" in reqs:
-            lines.append('DISPLAY "APCSP"')
-        elif "hot_word" in reqs:
-            lines.append('DISPLAY "Hot"')
-        else:
+    # Output if required but not satisfied by earlier blocks
+    if "output" in reqs:
+        joined = "\n".join(lines).lower()
+        if "display" not in joined and "print" not in joined and "output" not in joined:
             lines.append("DISPLAY x")
 
-    # Return requirement
+    # Return if required
     if "return" in reqs:
         lines.append("RETURN x")
 
-    # Close function if opened
     if "function" in reqs:
         lines.append("END FUNCTION")
 
@@ -283,35 +288,33 @@ def _autofill_pseudocode_from_prompt(question_text: str) -> str:
 @robop_api.route("/autofill", methods=["POST"])
 def autofill_answer():
     """
-    Supports TWO request styles:
+    Two request shapes:
 
-    1) Station/Sector autofill (your old behavior):
-       Request body: { "sector_id": 1-5, "question_num": 0-2 }
-       Response: { success, answer }
+    A) Sector modules (robot/pseudocode/mcq hardcoded):
+       { "sector_id": 1-5, "question_num": 0-2 }
 
-    2) Pseudocode bank autofill (NEW):
-       Request body: { "question_id": <int>, "level": "level1".."level5" (optional) }
-       Response: { success, answer, question_text }
+    B) Pseudocode question bank (NEW):
+       { "question_id": <int>, "level": "level1".."level5" (optional) }
     """
     data = _get_json()
 
-    # --- NEW: Pseudocode bank autofill path ---
+    # ---------- B) PSEUDOCODE BANK ----------
     if data.get("question_id") is not None:
         try:
             qid = int(data.get("question_id"))
         except Exception:
             return jsonify({"success": False, "message": "question_id must be an integer"}), 400
 
-        level = data.get("level")  # optional: "level1"..."level5"
+        level = data.get("level")  # optional
         row = PseudocodeQuestionBank.query.get(qid)
         if not row:
             return jsonify({"success": False, "message": "Question not found"}), 404
 
+        # pick text from the specified level or first non-empty
         question_text = None
         if level and hasattr(row, level):
             question_text = getattr(row, level)
         else:
-            # find first populated column
             for col in ["level1", "level2", "level3", "level4", "level5"]:
                 val = getattr(row, col, None)
                 if val:
@@ -332,7 +335,7 @@ def autofill_answer():
             "question_text": question_text
         }), 200
 
-    # --- OLD: Sector/Q# autofill path ---
+    # ---------- A) SECTOR HARD-CODED ----------
     sector_id = data.get("sector_id")
     question_num = data.get("question_num")
 
@@ -342,64 +345,27 @@ def autofill_answer():
     answers = {
         1: {
             0: "robot.MoveForward(4);\nrobot.TurnRight();\nrobot.MoveForward(4);",
-            1: """function Average(nums) {
-  let sum = 0;
-  for (let n of nums) {
-    sum += n;
-  }
-  return sum / nums.length;
-}""",
+            1: "sum ← 0\nFOR EACH n IN nums\n  sum ← sum + n\nEND FOR\nDISPLAY sum / LENGTH(nums)",
             2: 0
         },
         2: {
             0: "robot.MoveForward(4);\nrobot.TurnLeft();\nrobot.MoveForward(4);",
-            1: """function CountAbove(nums, t) {
-  let count = 0;
-  for (let n of nums) {
-    if (n > t) {
-      count += 1;
-    }
-  }
-  return count;
-}""",
+            1: "count ← 0\nFOR EACH n IN nums\n  IF n > t\n    count ← count + 1\n  END IF\nEND FOR\nDISPLAY count",
             2: 0
         },
         3: {
             0: "robot.MoveForward(2);\nrobot.TurnRight();\nrobot.MoveForward(4);\nrobot.TurnRight();\nrobot.MoveForward(2);",
-            1: """function MaxValue(nums) {
-  let max = nums[0];
-  for (let n of nums) {
-    if (n > max) {
-      max = n;
-    }
-  }
-  return max;
-}""",
+            1: "max ← nums[1]\nFOR EACH n IN nums\n  IF n > max\n    max ← n\n  END IF\nEND FOR\nDISPLAY max",
             2: 0
         },
         4: {
             0: "robot.MoveForward(4);",
-            1: """function ReplaceAll(list, t, r) {
-  for (let i=0; i<list.length; i++) {
-    if (list[i] === t) {
-      list[i] = r;
-    }
-  }
-  return list;
-}""",
+            1: "FOR i ← 1 TO LENGTH(list)\n  IF list[i] = t\n    list[i] ← r\n  END IF\nEND FOR\nDISPLAY list",
             2: 0
         },
         5: {
             0: "robot.TurnRight();\nrobot.MoveForward(2);\nrobot.TurnLeft();\nrobot.MoveForward(4);\nrobot.TurnLeft();\nrobot.MoveForward(2);",
-            1: """function GetEvens(nums) {
-  let evens = [];
-  for (let n of nums) {
-    if (n % 2 === 0) {
-      evens.push(n);
-    }
-  }
-  return evens;
-}""",
+            1: "evens ← []\nFOR EACH n IN nums\n  IF n MOD 2 = 0\n    APPEND(evens, n)\n  END IF\nEND FOR\nDISPLAY evens",
             2: 0
         }
     }
@@ -407,11 +373,9 @@ def autofill_answer():
     if sector_id not in answers or question_num not in answers[sector_id]:
         return jsonify({"success": False, "message": "Invalid sector or question number"}), 404
 
-    answer = answers[sector_id][question_num]
-
     return jsonify({
         "success": True,
-        "answer": answer,
+        "answer": answers[sector_id][question_num],
         "sector_id": sector_id,
         "question_num": question_num
     }), 200
@@ -422,12 +386,7 @@ def autofill_answer():
 # ---------------------------
 
 def call_ai_api(question_text):
-    """
-    Calls an AI API to generate hints for a given question.
-    Uses env var GROQ_API_KEY if available.
-    """
     api_key = os.getenv("GROQ_API_KEY", "YOUR API KEY HERE")
-
     url = "https://api.groq.com/openai/v1/chat/completions"
 
     prompt = (
@@ -460,7 +419,6 @@ def call_ai_api(question_text):
             ]
 
         content = response.json()["choices"][0]["message"]["content"].strip()
-
         if content.startswith("```json"):
             content = content[7:]
         if content.endswith("```"):
@@ -468,7 +426,6 @@ def call_ai_api(question_text):
         content = content.strip()
 
         hints = json.loads(content)
-
         if isinstance(hints, list) and len(hints) >= 3:
             return hints[:3]
 
