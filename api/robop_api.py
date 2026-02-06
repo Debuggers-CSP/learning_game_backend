@@ -53,6 +53,8 @@ def _require_session_uid():
 @robop_api.route("/autofill", methods=["OPTIONS"])
 @robop_api.route("/get_hint", methods=["OPTIONS"])
 @robop_api.route("/generate_hints", methods=["OPTIONS"])
+@robop_api.route("/ai_chat", methods=["OPTIONS"])
+@robop_api.route("/ai_health", methods=["OPTIONS"])
 def robop_preflight():
     return _preflight_ok()
 
@@ -441,8 +443,222 @@ def autofill_answer():
     }), 200
 
 
+# ========== DeepSeek AI Chat Integration ==========
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "YOUR_API_KEY_HERE")
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+
+SECTOR_CONTEXTS = {
+    1: {
+        "title": "Sector 1: Basic Robot Commands & Pseudocode",
+        "topics": ["MOVE_FORWARD()", "ROTATE_LEFT()", "ROTATE_RIGHT()", "Binary numbers", "Average calculation"],
+        "goal": "Understanding basic robot navigation and computational thinking"
+    },
+    2: {
+        "title": "Sector 2: Conditionals & Logic",
+        "topics": ["Rotation commands", "Counting with conditions", "AND logic", "Loop structures"],
+        "goal": "Implementing conditional logic and boolean operations"
+    },
+    3: {
+        "title": "Sector 3: Complex Navigation",
+        "topics": ["Multi-step sequences", "Finding max values", "Abstraction", "Algorithm optimization"],
+        "goal": "Combining commands and understanding abstraction"
+    },
+    4: {
+        "title": "Sector 4: Loops & Data Manipulation",
+        "topics": ["Sequential commands", "List manipulation", "IP Protocol", "Iteration"],
+        "goal": "Mastering loops and data structures"
+    },
+    5: {
+        "title": "Sector 5: Advanced Algorithms",
+        "topics": ["Complex paths", "Filtering data", "Heuristics", "Algorithm design"],
+        "goal": "Demonstrating mastery of computational thinking"
+    }
+}
+
+QUESTION_TYPES = {
+    0: {
+        "name": "Robot Simulation Code",
+        "desc": "Write robot commands to navigate from start to goal",
+        "commands": ["robot.MoveForward(n)", "robot.TurnRight()", "robot.TurnLeft()"],
+        "tip": "Plan your path first, then code step by step"
+    },
+    1: {
+        "name": "Pseudocode Function",
+        "desc": "Write pseudocode using College Board style",
+        "elements": ["Variables", "Loops (FOR EACH, REPEAT)", "Conditionals (IF-ELSE)", "Return statements"],
+        "tip": "Focus on logic first, syntax second"
+    },
+    2: {
+        "name": "Multiple Choice Question",
+        "desc": "Computer Science concept understanding",
+        "topics": ["Binary/Data", "Logic gates", "CS principles", "Protocols"],
+        "tip": "Think about fundamental concepts first"
+    }
+}
+
+
+def _build_system_prompt(sector_num, question_num):
+    """Generate AI system prompt for specific question context."""
+    sector_info = SECTOR_CONTEXTS.get(sector_num, {})
+    question_info = QUESTION_TYPES.get(question_num, {})
+
+    return f"""You are a friendly CS education AI assistant helping students learn programming and computational thinking.
+
+Current Learning Context:
+- Sector: {sector_info.get('title', f'Sector {sector_num}')}
+- Learning Goal: {sector_info.get('goal', 'Master core concepts')}
+- Topics: {', '.join(sector_info.get('topics', []))}
+
+Current Question Type:
+- Type: {question_info.get('name', f'Question {question_num + 1}')}
+- Description: {question_info.get('desc', '')}
+- Tip: {question_info.get('tip', '')}
+
+Your Role:
+1. **Adaptive Teaching**: Respond based on student's specific question - be flexible
+2. **Guided Learning**: Help students think through problems, don't just give answers
+3. **Progressive Hints**: Start with concepts, gradually add detail if needed
+4. **Encourage Thinking**: Ask "why" and help students understand principles
+5. **Provide Examples**: Use similar (but not identical) examples when helpful
+6. **Be Supportive**: Use encouraging language, make students feel supported
+
+Response Style:
+- Concise and clear (avoid long explanations)
+- Use emojis sparingly for friendliness (💡🤔✨🎯)
+- Break down complex ideas into bullet points
+- Provide code snippets when appropriate
+- Keep responses under 150 words unless student asks for detail
+
+What NOT to do:
+- Don't give complete correct answers directly
+- Don't use overly technical jargon
+- Don't criticize student errors
+- Don't provide irrelevant information
+- Don't repeat yourself unnecessarily"""
+
+
+@robop_api.route("/ai_chat", methods=["POST"])
+def ai_chat():
+    """
+    Main AI chat endpoint.
+    Request: {
+        "sector_id": 1-5,
+        "question_num": 0-2,
+        "user_message": "student's question",
+        "conversation_history": [] (optional)
+    }
+    Response: {
+        "success": true,
+        "ai_response": "AI's reply"
+    }
+    """
+    data = _get_json()
+
+    sector_id = data.get("sector_id")
+    question_num = data.get("question_num")
+    user_message = data.get("user_message", "").strip()
+    conversation_history = data.get("conversation_history", [])
+
+    if sector_id is None or question_num is None or not user_message:
+        return jsonify({
+            "success": False,
+            "message": "Missing required fields: sector_id, question_num, or user_message"
+        }), 400
+
+    if sector_id not in range(1, 6) or question_num not in range(0, 3):
+        return jsonify({
+            "success": False,
+            "message": "Invalid sector_id (1-5) or question_num (0-2)"
+        }), 400
+
+    try:
+        system_prompt = _build_system_prompt(sector_id, question_num)
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        if conversation_history:
+            messages.extend(conversation_history[-20:])
+
+        messages.append({"role": "user", "content": user_message})
+
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": "deepseek-chat",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 400,
+            "top_p": 0.95
+        }
+
+        response = requests.post(
+            DEEPSEEK_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            error_msg = f"DeepSeek API error: {response.status_code}"
+            try:
+                error_data = response.json()
+                error_msg += f" - {error_data.get('error', {}).get('message', 'Unknown error')}"
+            except Exception:
+                pass
+
+            return jsonify({
+                "success": False,
+                "message": error_msg
+            }), 500
+
+        result = response.json()
+        ai_message = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        if not ai_message:
+            return jsonify({
+                "success": False,
+                "message": "Empty response from AI"
+            }), 500
+
+        return jsonify({
+            "success": True,
+            "ai_response": ai_message,
+            "sector_id": sector_id,
+            "question_num": question_num,
+            "usage": result.get("usage", {})
+        }), 200
+
+    except requests.Timeout:
+        return jsonify({
+            "success": False,
+            "message": "AI request timeout. Please try again."
+        }), 504
+
+    except Exception as e:
+        print(f"AI Chat Error: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Internal server error: {str(e)}"
+        }), 500
+
+
+@robop_api.route("/ai_health", methods=["GET"])
+def ai_health_check():
+    """Check if AI service is configured correctly."""
+    return jsonify({
+        "success": True,
+        "service": "DeepSeek AI Chat",
+        "status": "configured",
+        "api_key_present": bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_API_KEY_HERE")
+    }), 200
+
+
 # ---------------------------
-# AI HINTS
+# AI HINTS (Groq)
 # ---------------------------
 
 def call_ai_api(question_text):
