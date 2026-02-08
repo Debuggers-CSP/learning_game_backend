@@ -25,6 +25,8 @@ from __init__ import app
 from flask import Blueprint, request, jsonify, current_app, g
 from flask_restful import Api, Resource
 import requests
+import re
+import time
 from api.jwt_authorize import token_required
 
 chatgpt_api = Blueprint('chatgpt_api', __name__, url_prefix='/api')
@@ -37,6 +39,81 @@ def _normalize_model(model_name: str) -> str:
     if name.lower() == 'chatgpt-5.2':
         return 'gpt-5.2'
     return name
+
+
+def _find_video_url(payload):
+    if isinstance(payload, str) and payload.startswith("http") and re.search(r"\.(mp4|mov|webm)(\?|$)", payload):
+        return payload
+    if isinstance(payload, dict):
+        for value in payload.values():
+            found = _find_video_url(value)
+            if found:
+                return found
+    if isinstance(payload, list):
+        for item in payload:
+            found = _find_video_url(item)
+            if found:
+                return found
+    return ""
+
+
+def _call_pika_video(prompt: str) -> dict:
+    api_key = current_app.config.get("PIKA_API_KEY")
+    server = current_app.config.get("PIKA_SERVER")
+    status_server = current_app.config.get("PIKA_STATUS_SERVER")
+    model = current_app.config.get("PIKA_MODEL")
+    if not api_key or not server:
+        return {"success": False, "message": "Video generation is not configured (PIKA_SERVER/PIKA_API_KEY missing)"}
+
+    payload = {"prompt": prompt}
+    if model:
+        payload["model"] = model
+
+    try:
+        response = requests.post(
+            server,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            },
+            json=payload,
+            timeout=30
+        )
+        if response.status_code != 200:
+            return {"success": False, "message": "PIKA request failed"}
+        pika_json = response.json()
+        video_url = _find_video_url(pika_json)
+        if video_url:
+            return {"success": True, "video_url": video_url}
+
+        request_id = pika_json.get("id") or pika_json.get("request_id") or pika_json.get("job_id")
+        status_url = pika_json.get("status_url")
+        if request_id and status_server and not status_url:
+            status_url = f"{status_server.rstrip('/')}/{request_id}"
+
+        if status_url:
+            for _ in range(2):
+                time.sleep(1.5)
+                status_response = requests.get(
+                    status_url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=20
+                )
+                if status_response.status_code != 200:
+                    continue
+                status_json = status_response.json()
+                status_video_url = _find_video_url(status_json)
+                if status_video_url:
+                    return {"success": True, "video_url": status_video_url}
+
+        return {
+            "success": True,
+            "video_status": "pending",
+            "video_request_id": request_id,
+            "video_status_url": status_url
+        }
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        return {"success": False, "message": "PIKA error"}
 
 class ChatGPTAPI:
     class _Ask(Resource):
@@ -68,6 +145,13 @@ class ChatGPTAPI:
             text = body.get('text', '')
             if not text:
                 return {'message': 'Text field is required'}, 400
+
+            video_requested = bool(
+                body.get('video')
+                or (body.get('mode') == 'video')
+                or (body.get('type') == 'video')
+                or body.get('generate_video')
+            )
             
             # Get configuration
             api_key = app.config.get('OPENAI_API_KEY')
@@ -86,6 +170,33 @@ class ChatGPTAPI:
             # Default prompt for citation analysis, can be overridden
             default_prompt = "Please look at this text for correct academic citations, and recommend APA references for each area of concern"
             prompt = body.get('prompt', default_prompt)
+
+            if video_requested:
+                video_prompt = body.get('video_prompt')
+                if not video_prompt:
+                    video_prompt = f"{prompt}: {text}" if prompt else text
+                video_result = _call_pika_video(video_prompt)
+                if video_result.get("success") and video_result.get("video_url"):
+                    return {
+                        "success": True,
+                        "text": "Video ready",
+                        "video_url": video_result.get("video_url"),
+                        "user": current_user.uid
+                    }
+                if video_result.get("video_status") == "pending":
+                    return {
+                        "success": True,
+                        "text": "Video is generating",
+                        "video_status": "pending",
+                        "video_request_id": video_result.get("video_request_id"),
+                        "video_status_url": video_result.get("video_status_url"),
+                        "user": current_user.uid
+                    }
+                return {
+                    "success": False,
+                    "message": video_result.get("message") or "Video generation failed",
+                    "user": current_user.uid
+                }, 500
 
             # Allow overriding model per request (e.g., ChatGPT 5.2)
             # Accepts aliases: "chatgpt-5.2" -> "gpt-5.2"

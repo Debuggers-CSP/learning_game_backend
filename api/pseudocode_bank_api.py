@@ -44,11 +44,17 @@ def _requires(prompt: str):
         req.append("input")
     if "display" in p or "output" in p or "print" in p:
         req.append("output")
+    if "action" in p or "actions" in p or "event" in p:
+        req.append("actions")
+    if "result" in p or "score" in p or "state" in p or "status" in p or "outcome" in p:
+        req.append("result")
+    if "unknown" in p or "unexpected" in p:
+        req.append("unknown")
 
     # conditionals / loops / functions
-    if "if" in p or "otherwise" in p or "else" in p:
+    if "if" in p or "otherwise" in p or "else" in p or "decision" in p:
         req.append("if")
-    if "for " in p or "from" in p or "times" in p or "1 to" in p or "1..":
+    if "loop" in p or "for " in p or "from" in p or "times" in p or "1 to" in p or "1..":
         req.append("loop")
     if "write " in p or "returns" in p or "return" in p or "(" in p and ")" in p and "write" in p:
         req.append("function")
@@ -94,17 +100,32 @@ def grade_pseudocode(question_text: str, user_code: str):
     # Output
     if "output" in reqs:
         if not has_any(["display", "print", "output", "show "]):
-            missing.append("An OUTPUT step (e.g., DISPLAY x)")
+            missing.append("Output the final result")
+
+    # Actions list
+    if "actions" in reqs:
+        if not has_any(["action", "actions", "event", "step"]):
+            missing.append("Process each action in order")
+
+    # Result variable
+    if "result" in reqs:
+        if not has_any(["result", "score", "state", "status", "outcome", "count", "total"]):
+            missing.append("Define and update a result")
 
     # If/Else
     if "if" in reqs:
-        if not has_any(["if", "else", "otherwise"]):
-            missing.append("An IF/ELSE decision")
+        if not has_any(["if", "else", "otherwise", "case", "switch"]):
+            missing.append("Use if/else decisions for actions")
 
     # Loop
     if "loop" in reqs:
-        if not has_any(["for", "while", "repeat", "loop"]):
-            missing.append("A LOOP (for/while/repeat)")
+        if not has_any(["for", "while", "repeat", "loop", "each"]):
+            missing.append("Loop once per action")
+
+    # Unknown action handling
+    if "unknown" in reqs:
+        if not has_any(["unknown", "default", "otherwise", "else"]):
+            missing.append("Handle unknown actions safely")
 
     # Function
     if "function" in reqs:

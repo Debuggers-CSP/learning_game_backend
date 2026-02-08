@@ -53,7 +53,9 @@ from hacks.jokes import initJokes
 from api.robop_api import robop_api
 from model.robop_user import RobopUser, UserBadge, initRobopUsers
 from api.endgame_api import endgame_api
+from api.debug_challenge_api import debug_challenge_api
 from model.endgame import init_endgame_data
+from model.debug_challenge import init_debug_challenge_data
 from api.robop_admin_api import robop_admin_api
 
 # from model.announcement import Announcement ##temporary revert
@@ -95,6 +97,7 @@ app.register_blueprint(joke_api)  # Register the joke API blueprint
 app.register_blueprint(post_api)  # Register the social media post API
 app.register_blueprint(robop_api)
 app.register_blueprint(endgame_api)
+app.register_blueprint(debug_challenge_api)
 # app.register_blueprint(announcement_api) ##temporary revert
 app.register_blueprint(pseudocode_bank_api)
 
@@ -105,6 +108,7 @@ with app.app_context():
     initRobopUsers()
     init_endgame_data()
     initPseudocodeQuestionBank()
+    init_debug_challenge_data()
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
@@ -165,6 +169,16 @@ def index():
 @app.route('/ending/<int:player_id>')
 def ending_page(player_id):
     return render_template("ending.html", player_id=player_id)
+
+
+@app.route('/debug-challenge')
+def debug_challenge_page():
+    return render_template("debug_challenge.html")
+
+
+@app.route('/debug')
+def debug_challenge_alias():
+    return render_template("debug_challenge.html")
 
 
 

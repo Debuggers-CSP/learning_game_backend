@@ -1,407 +1,4 @@
-{% extends "layouts/base.html" %}
 
-{% block head %}
-<title>Ending Page</title>
-{% endblock %}
-
-{% block style %}
-<style>
-    .ending-container {
-        max-width: 1100px;
-        margin: 30px auto;
-        padding: 24px;
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 16px;
-        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
-    }
-    .badge-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: #f5f5f7;
-        border: 1px solid #e0e0e0;
-        border-radius: 999px;
-        padding: 6px 14px;
-        margin: 6px;
-        font-weight: 600;
-    }
-    .code-box {
-        background: #0b1020;
-        color: #d4d7ff;
-        border-radius: 12px;
-        padding: 16px;
-    }
-    .code-box pre {
-        margin: 0;
-        white-space: pre-wrap;
-    }
-    .status-pill {
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: 700;
-    }
-    .status-ok {
-        background: #d1fae5;
-        color: #065f46;
-    }
-    .status-bad {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-    .guide-panel {
-        background: #0f172a;
-        color: #e2e8f0;
-        border-radius: 12px;
-        padding: 16px;
-        min-height: 160px;
-    }
-    .guide-progress {
-        height: 6px;
-        background: rgba(148, 163, 184, 0.3);
-        border-radius: 999px;
-        overflow: hidden;
-        margin-bottom: 12px;
-    }
-    .guide-progress > div {
-        height: 100%;
-        width: 0%;
-        background: linear-gradient(90deg, #38bdf8, #22d3ee);
-        transition: width 0.3s ease;
-    }
-    .guide-step {
-        padding: 8px 10px;
-        border-radius: 10px;
-        margin-bottom: 8px;
-        background: rgba(148, 163, 184, 0.12);
-    }
-    .guide-step.active {
-        background: rgba(56, 189, 248, 0.25);
-        border: 1px solid rgba(56, 189, 248, 0.6);
-    }
-    .guide-visuals {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 10px;
-        margin-top: 12px;
-    }
-    .guide-visual-card {
-        background: rgba(148, 163, 184, 0.12);
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 12px;
-        padding: 10px;
-    }
-    .guide-visual-card .emoji {
-        font-size: 20px;
-        margin-right: 6px;
-    }
-    .guide-visual-card img {
-        width: 100%;
-        border-radius: 10px;
-        margin-top: 8px;
-        border: 1px solid rgba(148, 163, 184, 0.3);
-    }
-    .guide-video {
-        margin-top: 12px;
-        padding: 12px;
-        border-radius: 12px;
-        background: rgba(30, 41, 59, 0.6);
-        border: 1px solid rgba(148, 163, 184, 0.35);
-    }
-    .guide-video-output {
-        margin-top: 12px;
-        padding: 12px;
-        border-radius: 12px;
-        background: rgba(15, 23, 42, 0.8);
-        border: 1px solid rgba(148, 163, 184, 0.35);
-    }
-    .guide-video-output video {
-        width: 100%;
-        border-radius: 10px;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: #0b1020;
-    }
-    .video-fallback {
-        color: #cbd5f5;
-        font-size: 14px;
-        margin-top: 8px;
-    }
-    .video-scene {
-        padding: 8px 10px;
-        border-radius: 10px;
-        margin-bottom: 8px;
-        background: rgba(148, 163, 184, 0.12);
-        border: 1px solid transparent;
-    }
-    .video-scene.active {
-        background: rgba(56, 189, 248, 0.2);
-        border: 1px solid rgba(56, 189, 248, 0.6);
-    }
-    .guide-ui-steps {
-        margin-top: 12px;
-        padding: 10px;
-        border-radius: 10px;
-        background: rgba(34, 211, 238, 0.12);
-        border: 1px solid rgba(34, 211, 238, 0.4);
-    }
-    .chat-box {
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 12px;
-        max-height: 260px;
-        overflow-y: auto;
-        background: #fafafa;
-    }
-    .helper-text {
-        color: #64748b;
-        font-size: 14px;
-        margin-bottom: 6px;
-    }
-    .role-badges {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 12px;
-    }
-    .role-badge {
-        border: 1px solid #2563eb;
-        background: transparent;
-        color: #2563eb;
-        border-radius: 999px;
-        padding: 6px 12px;
-        font-weight: 600;
-        font-size: 13px;
-    }
-    .role-badge.active {
-        background: #2563eb;
-        color: #fff;
-    }
-    .chat-panel {
-        border: 1px solid #1f2937;
-        border-radius: 12px;
-        background: #0b1020;
-        color: #e2e8f0;
-        padding: 12px;
-    }
-    .chat-log {
-        max-height: 220px;
-        overflow-y: auto;
-        margin-bottom: 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    .chat-bubble {
-        padding: 8px 10px;
-        border-radius: 10px;
-        font-size: 14px;
-    }
-    .chat-ai {
-        background: rgba(56, 189, 248, 0.2);
-        border: 1px solid rgba(56, 189, 248, 0.4);
-    }
-    .chat-user {
-        align-self: flex-end;
-        background: rgba(59, 130, 246, 0.2);
-        border: 1px solid rgba(59, 130, 246, 0.4);
-    }
-    .chat-input {
-        display: flex;
-        gap: 8px;
-    }
-    .chat-input input {
-        flex: 1;
-        padding: 8px 10px;
-        border-radius: 8px;
-        border: 1px solid rgba(148, 163, 184, 0.6);
-        background: #0f172a;
-        color: #e2e8f0;
-    }
-    .chat-message {
-        margin-bottom: 10px;
-    }
-    .chat-user {
-        font-weight: 600;
-        color: #1f2937;
-    }
-    .chat-ai {
-        font-weight: 600;
-        color: #2563eb;
-    }
-</style>
-{% endblock %}
-
-{% block body %}
-<div class="ending-container">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
-        <div>
-            <h2 class="mb-1">Maze Complete</h2>
-            <div class="text-muted">Player ID: {{ player_id }}</div>
-        </div>
-        <div id="completionStatus" class="status-pill status-bad">Not Completed</div>
-    </div>
-
-    <div class="row g-4">
-        <div class="col-lg-6">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Final Score Summary</h5>
-                    <div class="row">
-                        <div class="col-6">
-                            <div class="text-muted">Final Attempts</div>
-                            <div id="finalAttempts" class="h4">-</div>
-                        </div>
-                        <div class="col-6">
-                            <div class="text-muted">Final Badge</div>
-                            <div id="finalBadge" class="h4">-</div>
-                        </div>
-                    </div>
-                    <div class="mt-3">
-                        <div class="text-muted">Completed At</div>
-                        <div id="completedAt">-</div>
-                    </div>
-                    <div class="mt-3">
-                        <div class="text-muted">Final Answer Correct</div>
-                        <div id="finalCorrect">-</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-lg-6">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Earned Badges</h5>
-                    <div id="badgeList" class="mt-2">Loading...</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Attempts & Timestamps</h5>
-                    <div class="table-responsive">
-                        <table class="table table-striped">
-                            <thead>
-                                <tr>
-                                    <th>Badge</th>
-                                    <th>Attempts</th>
-                                    <th>Timestamp</th>
-                                </tr>
-                            </thead>
-                            <tbody id="attemptsTable">
-                                <tr><td colspan="3">Loading...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Final Code Answer</h5>
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-3">
-                            <label class="form-label">Final Attempts</label>
-                            <input id="finalAttemptsInput" type="number" class="form-control" min="0" placeholder="e.g. 3">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Final Badge Name</label>
-                            <input id="finalBadgeInput" type="text" class="form-control" placeholder="e.g. Champion">
-                        </div>
-                    </div>
-                    <textarea id="finalAnswer" class="form-control" rows="6" placeholder="Paste your final code here..."></textarea>
-                    <div class="d-flex flex-wrap gap-2 mt-3">
-                        <button id="checkAnswer" class="btn btn-primary">Check Answer</button>
-                        <button id="saveCompletion" class="btn btn-success">Save Completion</button>
-                        <div id="checkStatus" class="ms-auto"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">AI Walkthrough Video (No Full Code)</h5>
-                    <p class="text-muted">Generate a step-by-step video walkthrough that explains how the code is written, without revealing the full solution.</p>
-                    <div class="d-flex flex-wrap gap-2 mb-3">
-                        <button id="generateGuide" class="btn btn-outline-primary">Generate Video Walkthrough</button>
-                        <button id="playGuide" class="btn btn-outline-secondary">Play Video</button>
-                        <span id="guideStatus" class="text-muted"></span>
-                    </div>
-                    <div class="guide-panel" id="guidePanel">
-                        <div class="guide-progress"><div id="guideProgress"></div></div>
-                        <div class="text-muted">No walkthrough generated yet.</div>
-                    </div>
-                    <div class="guide-video-output" id="guideVideoOutput" style="display:none;">
-                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
-                            <strong>Generated Video</strong>
-                            <a id="downloadVideo" class="btn btn-sm btn-outline-light" download="walkthrough.webm" href="#">Download</a>
-                        </div>
-                        <video id="guideVideoPlayer" controls></video>
-                        <div id="videoFallback" class="video-fallback" style="display:none;"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h3>💬 Hint Coach Chatbot</h3>
-                    <p class="helper-text">Pick a helper role so you get the right type of feedback without full solutions.</p>
-                    <p class="helper-text">Guardrail: The chatbot will not provide full fixes. To run code in chat, paste a Python code block (```python ... ```).</p>
-                    <div class="role-badges" id="chatRoles">
-                        <button type="button" class="role-badge" data-role="hint">Hint Coach</button>
-                        <button type="button" class="role-badge" data-role="debugger">Debugger</button>
-                        <button type="button" class="role-badge" data-role="teacher">Teacher</button>
-                        <button type="button" class="role-badge" data-role="checker">Checker</button>
-                    </div>
-                    <div class="chat-panel">
-                        <div class="chat-log" id="chatLog">
-                            <div class="chat-bubble chat-ai">Hint Coach: Tell me the level and what you think the bug is.</div>
-                        </div>
-                        <div class="chat-input">
-                            <input id="chatInput" type="text" placeholder="Ask for help or paste ```python ...``` to run code" />
-                            <button class="btn btn-primary" id="sendChat">Send</button>
-                        </div>
-                        <div class="mt-3">
-                            <label class="form-label">Run Python code</label>
-                            <textarea id="codeRunnerInput" class="form-control" rows="4" placeholder="Paste Python code here to run..."></textarea>
-                            <div class="d-flex gap-2 mt-2">
-                                <button type="button" class="btn btn-outline-primary" id="runCode">Run Code</button>
-                                <span class="text-muted" id="codeRunStatus"></span>
-                            </div>
-                            <div class="code-box mt-2" id="codeRunOutput" style="display:none;"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Data Model Summary</h5>
-                    <p class="text-muted mb-0">
-                        This game uses a many-to-many relationship between players and badges. One player can earn
-                        many different badges, and the same badge can be earned by many different players. That is
-                        why a Player Badges table is used: it tracks each earned badge with attempts and timestamps
-                        so progress is stored clearly for every student.
-                    </p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div id="pageData" data-player-id="{{ player_id }}" data-api-base="" hidden></div>
-
-<script>
     const pageData = document.getElementById("pageData");
     const playerId = pageData?.dataset.playerId;
     const apiBase = pageData?.dataset.apiBase || "";
@@ -430,16 +27,11 @@
     const guideVideoPlayer = document.getElementById("guideVideoPlayer");
     const downloadVideo = document.getElementById("downloadVideo");
     const videoFallback = document.getElementById("videoFallback");
-    const chatLog = document.getElementById("chatLog");
+    const chatBox = document.getElementById("chatBox");
     const chatInput = document.getElementById("chatInput");
-    const chatSend = document.getElementById("sendChat");
-    const chatRoles = Array.from(document.querySelectorAll(".role-badge"));
-    const codeRunnerInput = document.getElementById("codeRunnerInput");
-    const runCodeBtn = document.getElementById("runCode");
-    const codeRunStatus = document.getElementById("codeRunStatus");
-    const codeRunOutput = document.getElementById("codeRunOutput");
+    const chatSend = document.getElementById("chatSend");
+    const chatTyping = document.getElementById("chatTyping");
     const chatHistory = [];
-    let chatRole = "hint_coach";
     let guideSteps = [];
     let guideDurations = [];
     let guideVideo = null;
@@ -877,23 +469,14 @@
     });
 
     function appendChatMessage(role, text) {
-        if (!chatLog) return;
-        const bubble = document.createElement("div");
-        bubble.className = role === "user" ? "chat-bubble chat-user" : "chat-bubble chat-ai";
-        bubble.textContent = role === "user" ? `You: ${text}` : text;
-        chatLog.appendChild(bubble);
-        chatLog.scrollTop = chatLog.scrollHeight;
-    }
-
-    function extractPythonCode(text) {
-        const match = text.match(/```python\n([\s\S]*?)```/i) || text.match(/```\n([\s\S]*?)```/i);
-        if (match) {
-            return match[1].trim();
-        }
-        if (text.trim().toLowerCase().startsWith("run:")) {
-            return text.replace(/^run:\s*/i, "").trim();
-        }
-        return "";
+        if (!chatBox) return;
+        const wrapper = document.createElement("div");
+        wrapper.className = "chat-message";
+        const labelClass = role === "user" ? "chat-user" : "chat-ai";
+        const label = role === "user" ? "You" : "AI";
+        wrapper.innerHTML = `<div class=\"${labelClass}\">${label}</div><div>${text}</div>`;
+        chatBox.appendChild(wrapper);
+        chatBox.scrollTop = chatBox.scrollHeight;
     }
 
     async function sendChatMessage() {
@@ -902,32 +485,17 @@
         appendChatMessage("user", message);
         chatHistory.push({ role: "user", content: message });
         chatInput.value = "";
+        if (chatTyping) chatTyping.style.display = "block";
         if (chatSend) chatSend.disabled = true;
-
-        const code = extractPythonCode(message);
-        if (code) {
-            const response = await safeFetch("/run/python", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ code })
-            });
-            if (!response) {
-                appendChatMessage("assistant", "Run Output: Backend unavailable");
-            } else {
-                const data = await response.json();
-                const output = data.output || "(no output)";
-                appendChatMessage("assistant", `Run Output: ${output}`);
-                chatHistory.push({ role: "assistant", content: `Run Output: ${output}` });
-            }
-        }
 
         const response = await safeFetch(`/player/${playerId}/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, history: chatHistory, role: chatRole })
+            body: JSON.stringify({ message, history: chatHistory })
         });
         if (!response) {
             appendChatMessage("assistant", "Backend unavailable");
+            if (chatTyping) chatTyping.style.display = "none";
             if (chatSend) chatSend.disabled = false;
             return;
         }
@@ -951,38 +519,8 @@
                 await generateVideoFromScenes(guideVideo.scenes);
             }
         }
+        if (chatTyping) chatTyping.style.display = "none";
         if (chatSend) chatSend.disabled = false;
-    }
-
-    async function runCode() {
-        if (!codeRunnerInput) {
-            return;
-        }
-        const code = codeRunnerInput.value.trim();
-        if (!code) {
-            if (codeRunStatus) codeRunStatus.textContent = "Paste code to run.";
-            return;
-        }
-        if (codeRunStatus) codeRunStatus.textContent = "Running...";
-        if (runCodeBtn) runCodeBtn.disabled = true;
-        const response = await safeFetch("/run/python", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code })
-        });
-        if (!response) {
-            if (codeRunStatus) codeRunStatus.textContent = "Backend unavailable";
-            if (runCodeBtn) runCodeBtn.disabled = false;
-            return;
-        }
-        const data = await response.json();
-        const output = data.output || "(no output)";
-        if (codeRunOutput) {
-            codeRunOutput.style.display = "block";
-            codeRunOutput.textContent = output;
-        }
-        if (codeRunStatus) codeRunStatus.textContent = "";
-        if (runCodeBtn) runCodeBtn.disabled = false;
     }
 
     chatSend.addEventListener("click", sendChatMessage);
@@ -992,26 +530,6 @@
             sendChatMessage();
         }
     });
-    if (runCodeBtn) {
-        runCodeBtn.addEventListener("click", runCode);
-    }
-    const roleMap = {
-        "hint": "hint_coach",
-        "debugger": "debugger",
-        "teacher": "teacher",
-        "checker": "checker",
-    };
-    chatRoles.forEach((btn) => {
-        btn.addEventListener("click", () => {
-            chatRoles.forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            const rawRole = btn.dataset.role || "hint";
-            chatRole = roleMap[rawRole] || "hint_coach";
-        });
-    });
-    if (chatRoles.length) {
-        chatRoles[0].classList.add("active");
-    }
 
     saveCompletionBtn.addEventListener("click", async () => {
         checkStatus.textContent = "Saving...";
@@ -1048,5 +566,3 @@
     });
 
     loadScore();
-</script>
-{% endblock %}

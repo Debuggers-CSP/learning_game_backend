@@ -1,0 +1,398 @@
+{% extends "layouts/base.html" %}
+{% set project = "Debug Challenge" %}
+
+{% block head %}
+<title>Debug Challenge</title>
+{% endblock %}
+
+{% block style %}
+<style>
+    .debug-container {
+        max-width: 1100px;
+        margin: 30px auto;
+        padding: 24px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 16px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+    }
+    .level-btn.active {
+        border-color: #2563eb;
+        background: #e0e7ff;
+        color: #1e3a8a;
+    }
+    .code-box {
+        background: #0b1020;
+        color: #d4d7ff;
+        border-radius: 12px;
+        padding: 16px;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .status-pill {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .status-ok {
+        background: #d1fae5;
+        color: #065f46;
+    }
+    .status-bad {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .role-btn.active {
+        border-color: #0ea5e9;
+        background: #e0f2fe;
+        color: #0c4a6e;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="debug-container">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Debug the Code</h2>
+            <div class="text-muted">Choose a level to begin.</div>
+        </div>
+        <div class="d-flex gap-2">
+            <span id="levelBadge" class="status-pill status-bad">No level selected</span>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Select Difficulty</h5>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-outline-primary level-btn" data-level="beginner">Beginner</button>
+                <button type="button" class="btn btn-outline-primary level-btn" data-level="intermediate">Intermediate</button>
+                <button type="button" class="btn btn-outline-primary level-btn" data-level="hard">Hard</button>
+                <button type="button" id="startChallenge" class="btn btn-primary">Start Challenge</button>
+            </div>
+            <div id="levelStatus" class="text-muted mt-2">Pick a level to load a challenge.</div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Challenge</h5>
+                    <div id="challengeTitle" class="fw-semibold mb-2">No challenge loaded yet.</div>
+                    <div id="challengePrompt" class="text-muted mb-3">Select a level and press Start Challenge.</div>
+                    <div class="code-box" id="challengeCode">Select a level to see the buggy code.</div>
+                    <div class="mt-3 text-muted" id="expectedBehavior"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Your Fix</h5>
+                    <textarea id="answerInput" class="form-control" rows="8" placeholder="Paste corrected Python code here only."></textarea>
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <button type="button" id="checkFix" class="btn btn-primary">Check Fix</button>
+                        <button type="button" id="saveBadge" class="btn btn-success">Save Level Badge</button>
+                        <span id="gradeStatus" class="text-muted"></span>
+                    </div>
+                    <div id="gradeHints" class="mt-3"></div>
+                    <div class="row g-2 mt-3">
+                        <div class="col-6">
+                            <input id="playerIdInput" type="number" min="1" class="form-control" placeholder="Player ID">
+                        </div>
+                        <div class="col-6">
+                                    <div class="text-muted mb-2" id="hintStatus">Hints remaining: 3</div>
+                            <input id="attemptsInput" type="number" min="0" class="form-control" placeholder="Attempts">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">AI Help Roles</h5>
+                    <div class="text-muted mb-2">The AI gives hints only and will not provide full solutions.</div>
+                    <div id="roleButtons" class="d-flex flex-wrap gap-2 mb-3"></div>
+                    <div id="chatBox" class="border rounded p-3 bg-light" style="min-height: 120px; max-height: 260px; overflow-y: auto;"></div>
+                    <div class="input-group mt-3">
+                        <input id="chatInput" type="text" class="form-control" placeholder="Ask for help based on the selected role...">
+                        <button type="button" id="chatSend" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const levelButtons = Array.from(document.querySelectorAll(".level-btn"));
+        const levelStatus = document.getElementById("levelStatus");
+        const levelBadge = document.getElementById("levelBadge");
+        const startChallengeBtn = document.getElementById("startChallenge");
+        const challengeTitle = document.getElementById("challengeTitle");
+        const challengePrompt = document.getElementById("challengePrompt");
+        const challengeCode = document.getElementById("challengeCode");
+        const expectedBehavior = document.getElementById("expectedBehavior");
+        const answerInput = document.getElementById("answerInput");
+        const checkFixBtn = document.getElementById("checkFix");
+        const saveBadgeBtn = document.getElementById("saveBadge");
+        const gradeStatus = document.getElementById("gradeStatus");
+        const gradeHints = document.getElementById("gradeHints");
+        const playerIdInput = document.getElementById("playerIdInput");
+        const attemptsInput = document.getElementById("attemptsInput");
+        const roleButtonsContainer = document.getElementById("roleButtons");
+        const hintStatus = document.getElementById("hintStatus");
+        const chatBox = document.getElementById("chatBox");
+        const chatInput = document.getElementById("chatInput");
+        const chatSend = document.getElementById("chatSend");
+
+        let selectedLevel = "";
+        let selectedRole = "";
+        let challengeId = null;
+        let lastPassed = false;
+
+        async function safeFetch(url, options = {}) {
+            try {
+                const response = await fetch(url, options);
+                return response;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function setLevelBadge(text, isOk) {
+            levelBadge.textContent = text;
+            levelBadge.classList.toggle("status-ok", isOk);
+            levelBadge.classList.toggle("status-bad", !isOk);
+        }
+
+        function setActiveButton(buttons, activeButton) {
+            buttons.forEach(btn => btn.classList.remove("active"));
+            if (activeButton) {
+                activeButton.classList.add("active");
+            }
+        }
+
+        async function loadRoles() {
+            const response = await safeFetch("/api/debug_challenge/roles");
+            if (!response) {
+                roleButtonsContainer.textContent = "Backend unavailable.";
+                return;
+            }
+            const data = await response.json();
+            if (!data.success) {
+                roleButtonsContainer.textContent = data.message || "Unable to load roles.";
+                return;
+            }
+            roleButtonsContainer.innerHTML = "";
+            data.roles.forEach(role => {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "btn btn-outline-info role-btn";
+                btn.textContent = role.label;
+                btn.dataset.role = role.key;
+                btn.addEventListener("click", () => {
+                    selectedRole = role.key;
+                    setActiveButton(Array.from(document.querySelectorAll(".role-btn")), btn);
+                });
+                roleButtonsContainer.appendChild(btn);
+            });
+        }
+
+        async function startChallenge(level, button) {
+            levelStatus.textContent = "Loading challenge...";
+            checkFixBtn.disabled = true;
+            saveBadgeBtn.disabled = true;
+            const response = await safeFetch("/api/debug_challenge/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ level })
+            });
+            if (!response) {
+                levelStatus.textContent = "Backend unavailable.";
+                return;
+            }
+            const data = await response.json();
+            if (!data.success) {
+                levelStatus.textContent = data.message || "Unable to load challenge.";
+                return;
+            }
+
+            selectedLevel = level;
+            challengeId = data.challenge?.id || null;
+            lastPassed = false;
+            setActiveButton(levelButtons, button);
+            setLevelBadge(`${data.level.toUpperCase()} • ${data.badge || "Badge"}`, true);
+            levelStatus.textContent = "Challenge loaded. Fix the bug!";
+            startChallengeBtn.textContent = "Next Challenge";
+            challengeTitle.textContent = `${data.level.toUpperCase()} • ${data.challenge?.title || "Challenge"}`;
+            challengePrompt.textContent = data.challenge?.prompt || "";
+            challengeCode.textContent = data.challenge?.buggy_code || "";
+            expectedBehavior.textContent = data.challenge?.expected_behavior || "";
+            gradeStatus.textContent = "";
+            gradeHints.innerHTML = "";
+            checkFixBtn.disabled = false;
+            saveBadgeBtn.disabled = false;
+        }
+
+        function handleLevelSelection(button) {
+            const level = button?.dataset?.level;
+            if (!level) {
+                return;
+            }
+            selectedLevel = level;
+            setActiveButton(levelButtons, button);
+            setLevelBadge(`LEVEL SELECTED • ${level.toUpperCase()}`, false);
+            levelStatus.textContent = "Level selected. Press Start Challenge to load content.";
+            startChallengeBtn.textContent = "Start Challenge";
+            challengeTitle.textContent = "No challenge loaded yet.";
+            challengePrompt.textContent = "Select a level and press Start Challenge.";
+            challengeCode.textContent = "Select a level to see the buggy code.";
+            expectedBehavior.textContent = "";
+        }
+
+        levelButtons.forEach(button => {
+            button.addEventListener("click", () => handleLevelSelection(button));
+        });
+
+        document.addEventListener("click", (event) => {
+            const button = event.target.closest(".level-btn");
+            if (button) {
+                handleLevelSelection(button);
+            }
+        });
+
+        startChallengeBtn.addEventListener("click", () => {
+            if (!selectedLevel) {
+                levelStatus.textContent = "Pick a level first.";
+                return;
+            }
+            const active = levelButtons.find(btn => btn.dataset.level === selectedLevel) || null;
+            startChallenge(selectedLevel, active);
+        });
+
+        document.addEventListener("click", (event) => {
+            const startButton = event.target.closest("#startChallenge");
+            if (!startButton) {
+                return;
+            }
+            if (!selectedLevel) {
+                levelStatus.textContent = "Pick a level first.";
+                return;
+            }
+            const active = levelButtons.find(btn => btn.dataset.level === selectedLevel) || null;
+            startChallenge(selectedLevel, active);
+        });
+
+        checkFixBtn.addEventListener("click", async () => {
+            if (!challengeId) {
+                gradeStatus.textContent = "Select a level first.";
+                return;
+            }
+            gradeStatus.textContent = "Checking...";
+            gradeHints.innerHTML = "";
+            const response = await safeFetch("/api/debug_challenge/grade", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    challenge_id: challengeId,
+                    answer: answerInput.value
+                })
+            });
+            if (!response) {
+                gradeStatus.textContent = "Backend unavailable.";
+                return;
+            }
+            const data = await response.json();
+            if (!data.success) {
+                gradeStatus.textContent = data.message || "Unable to grade.";
+                return;
+            }
+            lastPassed = !!data.passed;
+            gradeStatus.textContent = data.passed ? "Looks good." : "Needs work.";
+            if (data.hints && data.hints.length) {
+                gradeHints.innerHTML = `<ul class=\"mb-0\">${data.hints.map(h => `<li>${h}</li>`).join("")}</ul>`;
+            }
+        });
+
+        saveBadgeBtn.addEventListener("click", async () => {
+            if (!selectedLevel) {
+                gradeStatus.textContent = "Select a level first.";
+                return;
+            }
+            const playerId = Number(playerIdInput.value);
+            const attempts = Number(attemptsInput.value);
+            if (!Number.isFinite(playerId) || playerId <= 0) {
+                gradeStatus.textContent = "Enter a valid player id.";
+                return;
+            }
+            if (!Number.isFinite(attempts) || attempts < 0) {
+                gradeStatus.textContent = "Enter a valid attempts count.";
+                return;
+            }
+            const response = await safeFetch("/api/debug_challenge/complete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    player_id: playerId,
+                    level: selectedLevel,
+                    attempts,
+                    passed: lastPassed
+                })
+            });
+            if (!response) {
+                gradeStatus.textContent = "Backend unavailable.";
+                return;
+            }
+            const data = await response.json();
+            gradeStatus.textContent = data.message || (data.success ? "Saved" : "Unable to save");
+        });
+
+        chatSend.addEventListener("click", async () => {
+            if (!challengeId) {
+                chatBox.innerHTML = "<div class=\"text-muted\">Select a level first.</div>";
+                return;
+            }
+            if (!selectedRole) {
+                chatBox.innerHTML = "<div class=\"text-muted\">Choose a role first.</div>";
+                return;
+            }
+            const message = chatInput.value.trim();
+            if (!message) {
+                return;
+            }
+            const response = await safeFetch("/api/debug_challenge/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    challenge_id: challengeId,
+                    role: selectedRole,
+                    message,
+                    player_id: playerIdInput?.value ? Number(playerIdInput.value) : null
+                })
+            });
+            if (!response) {
+                chatBox.innerHTML = "<div class=\"text-muted\">Backend unavailable.</div>";
+                return;
+            }
+            const data = await response.json();
+            if (!data.success) {
+                chatBox.innerHTML = `<div class=\"text-muted\">${data.message || "Unable to chat."}</div>`;
+                return;
+            }
+            chatBox.innerHTML = `
+                <div><strong>${data.role.replace("_", " ")}</strong>: ${data.reply}</div>
+            `;
+            if (hintStatus && typeof data.remaining_hints === "number") {
+                hintStatus.textContent = `Hints remaining: ${data.remaining_hints}`;
+            }
+            chatInput.value = "";
+        });
+
+        loadRoles();
+    });
+</script>
+{% endblock %}

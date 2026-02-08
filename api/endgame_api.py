@@ -125,7 +125,7 @@ def _call_pika_video(prompt: str) -> dict:
     status_server = current_app.config.get("PIKA_STATUS_SERVER")
     model = current_app.config.get("PIKA_MODEL")
     if not api_key or not server:
-        return {"success": False, "message": "PIKA not configured"}
+        return {"success": False, "message": "Video generation is not configured (PIKA_SERVER/PIKA_API_KEY missing)"}
 
     payload = {"prompt": prompt}
     if model:
@@ -193,15 +193,15 @@ def _generate_fallback_svg() -> str:
             </g>
             <g font-family='Arial, sans-serif' fill='#0f172a' font-size='14' font-weight='700'>
                 <rect x='30' y='80' width='150' height='60' rx='10' fill='#38bdf8'/>
-                <text x='45' y='115'>Define inputs</text>
+                <text x='45' y='115'>Gather actions</text>
                 <rect x='210' y='80' width='150' height='60' rx='10' fill='#22d3ee'/>
-                <text x='232' y='115'>Loop steps</text>
+                <text x='232' y='115'>Loop actions</text>
                 <rect x='390' y='80' width='150' height='60' rx='10' fill='#a7f3d0'/>
                 <text x='410' y='115'>If / else</text>
                 <rect x='570' y='80' width='150' height='60' rx='10' fill='#fcd34d'/>
                 <text x='585' y='115'>Update result</text>
                 <rect x='750' y='80' width='120' height='60' rx='10' fill='#fca5a5'/>
-                <text x='765' y='115'>Return</text>
+                <text x='765' y='115'>Output</text>
             </g>
             <g stroke='#94a3b8' stroke-width='4' fill='none'>
                 <path d='M180 110 L210 110'/>
@@ -210,8 +210,8 @@ def _generate_fallback_svg() -> str:
                 <path d='M720 110 L750 110'/>
             </g>
             <g font-family='Arial, sans-serif' fill='#e2e8f0' font-size='13'>
-                <text x='30' y='200'>Follow this order every time you solve the final challenge.</text>
-                <text x='30' y='225'>Small steps. Clear decisions. Track the result.</text>
+                <text x='30' y='200'>Follow this order every time you solve the final action challenge.</text>
+                <text x='30' y='225'>Loop once per action. Decide. Update the result.</text>
             </g>
         </svg>
         """
@@ -324,8 +324,8 @@ def _generate_guidance(answer: str) -> dict:
     prompt = (
         "You are a tutoring assistant for beginners. Provide a step-by-step walkthrough "
         "that explains how to build a solution and how the code is written, without giving full code or pseudocode. "
-        "Use this structure in order: define inputs → loop through steps → decide with if/else → "
-        "update result → return. "
+        "Use this structure in order: gather actions → loop once per action → decide with if/else → "
+        "update result → output final result. "
         "Include UI guidance for a confused learner (what to click or do next). "
         "Return ONLY valid JSON with this schema: "
         "{\"title\":string,\"steps\":string[],\"ui_steps\":string[],"
@@ -375,6 +375,28 @@ def _generate_guidance(answer: str) -> dict:
 
         if cleaned_steps:
             durations = [7 for _ in cleaned_steps[:8]]
+            video_url = ""
+            video_status = ""
+            video_request_id = ""
+            video_status_url = ""
+            pika_prompt = (
+                "Create a short, friendly educational walkthrough video for a coding maze game. "
+                f"Title: {video_title}. "
+                "Keep it concise, motivational, and beginner-friendly. "
+                f"Key steps: {'; '.join(cleaned_steps[:6])}."
+            )
+            pika_result = _call_pika_video(pika_prompt)
+            if pika_result.get("success") and pika_result.get("video_url"):
+                video_url = pika_result.get("video_url")
+                video_notice = "Generated a real video walkthrough."
+            elif pika_result.get("video_status") == "pending":
+                video_status = "pending"
+                video_request_id = pika_result.get("video_request_id") or ""
+                video_status_url = pika_result.get("video_status_url") or ""
+                video_notice = "Video is generating. Please try again in a moment."
+            elif pika_result.get("message"):
+                video_notice = pika_result.get("message")
+
             return {
                 "success": True,
                 "title": title,
@@ -385,15 +407,19 @@ def _generate_guidance(answer: str) -> dict:
                     "title": video_title,
                     "scenes": cleaned_scenes[:8]
                 },
-                "video_notice": video_notice
+                "video_notice": video_notice,
+                "video_url": video_url,
+                "video_status": video_status,
+                "video_request_id": video_request_id,
+                "video_status_url": video_status_url
             }
 
     fallback_steps = [
-        "Define the inputs and what the final result should represent.",
-        "Loop through each step or action in order.",
-        "Use if/else decisions to interpret the current step.",
-        "Update the running result based on that decision.",
-        "Return or output the final result at the end."
+        "Gather the ordered list of actions and define what the result represents.",
+        "Loop once per action, in order.",
+        "Use if/else decisions to interpret the current action.",
+        "Update the running result based on that action.",
+        "Output the final result after the loop ends."
     ]
     fallback_ui_steps = [
         "Type your current understanding into the answer box.",
@@ -403,13 +429,34 @@ def _generate_guidance(answer: str) -> dict:
         "If correct, click Save Completion."
     ]
     fallback_scenes = [
-        {"title": "Inputs", "narration": "Define the inputs and expected output.", "on_screen": "Define inputs and expected output."},
-        {"title": "Loop", "narration": "Loop through each step in order and track progress.", "on_screen": "Loop through steps."},
-        {"title": "Decide", "narration": "Use if/else decisions to interpret each step.", "on_screen": "Decide with if/else."},
-        {"title": "Update", "narration": "Update the running result after each decision.", "on_screen": "Update the result."},
-        {"title": "Return", "narration": "Return the final result after the loop.", "on_screen": "Return the final result."}
+        {"title": "Actions", "narration": "Gather the actions and define the result.", "on_screen": "Gather actions and define result."},
+        {"title": "Loop", "narration": "Loop once per action in order.", "on_screen": "Loop once per action."},
+        {"title": "Decide", "narration": "Use if/else decisions to interpret each action.", "on_screen": "Decide with if/else."},
+        {"title": "Update", "narration": "Update the running result after each action.", "on_screen": "Update the result."},
+        {"title": "Output", "narration": "Output the final result after the loop.", "on_screen": "Output the final result."}
     ]
     fallback_notice = "Generated step-by-step video narration from fallback guidance."
+    fallback_video_url = ""
+    fallback_video_status = ""
+    fallback_video_request_id = ""
+    fallback_video_status_url = ""
+    fallback_prompt = (
+        "Create a short, friendly educational walkthrough video for a coding maze game. "
+        "Title: Walkthrough Video. "
+        f"Key steps: {'; '.join(fallback_steps[:6])}."
+    )
+    fallback_result = _call_pika_video(fallback_prompt)
+    if fallback_result.get("success") and fallback_result.get("video_url"):
+        fallback_video_url = fallback_result.get("video_url")
+        fallback_notice = "Generated a real video walkthrough."
+    elif fallback_result.get("video_status") == "pending":
+        fallback_video_status = "pending"
+        fallback_video_request_id = fallback_result.get("video_request_id") or ""
+        fallback_video_status_url = fallback_result.get("video_status_url") or ""
+        fallback_notice = "Video is generating. Please try again in a moment."
+    elif fallback_result.get("message"):
+        fallback_notice = fallback_result.get("message")
+
     return {
         "success": True,
         "title": "Walkthrough",
@@ -420,12 +467,17 @@ def _generate_guidance(answer: str) -> dict:
             "title": "Walkthrough Video",
             "scenes": fallback_scenes
         },
-        "video_notice": fallback_notice
+        "video_notice": fallback_notice,
+        "video_url": fallback_video_url,
+        "video_status": fallback_video_status,
+        "video_request_id": fallback_video_request_id,
+        "video_status_url": fallback_video_status_url
     }
 
 
-def _chat_response(message: str, history: list) -> dict:
+def _chat_response(message: str, history: list, role: str = "") -> dict:
     lowered = (message or "").lower()
+    role_key = (role or "").strip().lower()
     if not lowered.strip():
         return {
             "success": True,
@@ -479,6 +531,11 @@ def _chat_response(message: str, history: list) -> dict:
                 "reply": "Your video is generating. Please ask again in a moment.",
                 "video_status": "pending"
             }
+        if video_result.get("message"):
+            return {
+                "success": True,
+                "reply": video_result.get("message")
+            }
         return {
             "success": True,
             "reply": "I couldn’t generate a video right now. Please try again in a moment."
@@ -500,8 +557,31 @@ def _chat_response(message: str, history: list) -> dict:
             )
         }
 
+    role_instructions = ""
+    if role_key == "hint_coach":
+        role_instructions = (
+            "You are the Hint Coach. Give small clues only, one step at a time. "
+            "Do not reveal the full solution. Ask a short guiding question. "
+        )
+    elif role_key == "debugger":
+        role_instructions = (
+            "You are the Debugger. Point out likely bug locations or logic gaps without giving full code. "
+            "Be specific about where to look in the reasoning. "
+        )
+    elif role_key == "teacher":
+        role_instructions = (
+            "You are the Teacher. Explain the concept simply and clearly, using plain language. "
+            "Keep it short and avoid full solutions. "
+        )
+    elif role_key == "checker":
+        role_instructions = (
+            "You are the Checker. Confirm whether the approach matches the expected behavior. "
+            "If missing, say what to verify, but do not give full code. "
+        )
+
     prompt = (
         "You are a ChatGPT‑style tutoring assistant for a student coding maze endgame. "
+        f"{role_instructions}"
         "Be friendly, concise, and practical. Do NOT provide full code or pseudocode. "
         "Assume the student is confused and needs step‑by‑step UI guidance. "
         "If helpful, suggest which UI button to click next (Generate Walkthrough, Play Walkthrough, "
@@ -776,7 +856,8 @@ def chat_with_ai(player_id):
 
     history = data.get("history") if isinstance(data.get("history"), list) else []
 
-    result = _chat_response(message, history)
+    role = (data.get("role") or "").strip()
+    result = _chat_response(message, history, role)
     return jsonify(result), 200
 
 

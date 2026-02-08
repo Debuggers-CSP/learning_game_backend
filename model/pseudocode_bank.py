@@ -77,78 +77,91 @@ def initPseudocodeQuestionBank(force_recreate: bool = False):
             PseudocodeQuestionBank.__table__.drop(db.engine, checkfirst=True)
             PseudocodeQuestionBank.__table__.create(db.engine, checkfirst=True)
 
-        # If already seeded (any row exists), stop
-        if PseudocodeQuestionBank.query.first():
-            print("✅ PseudocodeQuestionBank ready (already has data).")
-            return
+        # If already seeded, ensure it matches the action-based model
+        existing = PseudocodeQuestionBank.query.first()
+        if existing:
+            sample_texts = [
+                existing.level1 or "",
+                existing.level2 or "",
+                existing.level3 or "",
+                existing.level4 or "",
+                existing.level5 or "",
+            ]
+            has_action_model = any("action" in (text or "").lower() for text in sample_texts)
+            if has_action_model:
+                print("✅ PseudocodeQuestionBank ready (already has data).")
+                return
+            print("⚠️ Legacy questions detected. Dropping & recreating PseudocodeQuestionBank only...")
+            PseudocodeQuestionBank.__table__.drop(db.engine, checkfirst=True)
+            PseudocodeQuestionBank.__table__.create(db.engine, checkfirst=True)
 
         # ----------------------------
-        # NEW QUESTIONS (50 total)
+        # ACTION-BASED QUESTIONS (50 total)
         # ----------------------------
 
         level1_questions = [
-            "Store the number 12 in x, then display x.",
-            "Input a name and display \"Hi, \" plus the name.",
-            "Set a ← 5 and b ← 7, then display a + b.",
-            "Input n and display \"EVEN\" if n is even, otherwise \"ODD\".",
-            "Input temp and display \"Hot\" if temp > 80, else \"Not hot\".",
-            "Increase score by 1 and display it. (Assume score already exists.)",
-            "Create list L ← [3, 6, 9] and display the first element.",
-            "Display all numbers from 1 to 5.",
-            "Input two numbers and display the larger one.",
-            "Input age and display \"Adult\" if age ≥ 18, else \"Minor\"."
+            "Actions: MOVE, HIT_WALL, MOVE. Result = score starts at 0. Loop once per action; if MOVE add 1, if HIT_WALL subtract 1. Output final result.",
+            "Actions: PICK_KEY, MOVE, OPEN_DOOR. Result = doorState starts 'locked'. Loop once per action; if PICK_KEY set hasKey true, if OPEN_DOOR and hasKey set doorState 'opened'. Output final result.",
+            "Actions: MOVE_UP, MOVE_DOWN, REACHED_EXIT. Result = status starts 'playing'. Loop once per action; if REACHED_EXIT set status 'win'. Output final result.",
+            "Actions: HIT_WALL, HIT_WALL, MOVE. Result = damage starts 0. Loop once per action; if HIT_WALL add 1. Output final result.",
+            "Actions: MOVE, MOVE, MOVE. Result = steps starts 0. Loop once per action; if MOVE add 1. Output final result.",
+            "Actions: PICK_KEY, PICK_KEY, MOVE. Result = keys starts 0. Loop once per action; if PICK_KEY add 1. Output final result.",
+            "Actions: MOVE, REACHED_EXIT. Result = outcome starts 'none'. Loop once per action; if REACHED_EXIT set outcome 'exit'. Output final result.",
+            "Actions: HIT_WALL, MOVE, HIT_WALL. Result = hits starts 0. Loop once per action; if HIT_WALL add 1. Output final result.",
+            "Actions: MOVE, MOVE, HIT_WALL, MOVE. Result = score starts 0. Loop once per action; MOVE +1, HIT_WALL -1. Output final result.",
+            "Actions: OPEN_DOOR. Result = doorState starts 'locked'. Loop once per action; if OPEN_DOOR set doorState 'opened'. Output final result."
         ]
 
         level2_questions = [
-            "Display the sum of numbers from 1 to 10.",
-            "Given list A, count how many items are 0 and display the count.",
-            "Input n and display \"Multiple of 3\" if n is divisible by 3.",
-            "Input 5 numbers (one at a time) and display their average.",
-            "Given list L, display the last element of L.",
-            "Input word and display \"YES\" if it equals \"APCSP\", else \"NO\".",
-            "Given list L, display each element.",
-            "Swap the values of x and y.",
-            "Input n. Display \"Positive\", \"Negative\", or \"Zero\".",
-            "Given list L, build list M containing only values greater than 10."
+            "Actions: MOVE, PICK_KEY, MOVE, HIT_WALL, OPEN_DOOR, REACHED_EXIT. Result = score starts 0. Loop once per action; MOVE +1, HIT_WALL -2, REACHED_EXIT +5. Output final result.",
+            "Actions: MOVE, MOVE, PICK_KEY, MOVE, OPEN_DOOR. Result = state starts 'locked'. Loop once per action; PICK_KEY sets hasKey, OPEN_DOOR with hasKey sets state 'opened'. Output final result.",
+            "Actions: HIT_WALL, MOVE, MOVE, HIT_WALL, MOVE. Result = lives starts 3. Loop once per action; HIT_WALL subtract 1, MOVE no change. Output final result.",
+            "Actions: PICK_KEY, MOVE, MOVE, OPEN_DOOR, MOVE, REACHED_EXIT. Result = status starts 'playing'. Loop once per action; REACHED_EXIT sets status 'win'. Output final result.",
+            "Actions: MOVE, PICK_KEY, HIT_WALL, MOVE, OPEN_DOOR, MOVE. Result = score starts 0. Loop once per action; MOVE +1, HIT_WALL -1, PICK_KEY +2. Output final result.",
+            "Actions: MOVE, MOVE, MOVE, HIT_WALL, MOVE, MOVE. Result = steps starts 0. Loop once per action; MOVE +1, HIT_WALL no change. Output final result.",
+            "Actions: PICK_KEY, PICK_KEY, MOVE, OPEN_DOOR, HIT_WALL. Result = keys starts 0. Loop once per action; PICK_KEY +1, OPEN_DOOR uses a key, HIT_WALL no change. Output final result.",
+            "Actions: MOVE, HIT_WALL, MOVE, REACHED_EXIT, MOVE. Result = score starts 0. Loop once per action; MOVE +1, HIT_WALL -1, REACHED_EXIT +5. Output final result.",
+            "Actions: MOVE, MOVE, HIT_WALL, PICK_KEY, OPEN_DOOR. Result = doorState starts 'locked'. Loop once per action; PICK_KEY sets hasKey, OPEN_DOOR with hasKey sets doorState 'opened'. Output final result.",
+            "Actions: MOVE, HIT_WALL, MOVE, HIT_WALL, MOVE, REACHED_EXIT. Result = damage starts 0. Loop once per action; HIT_WALL +1. Output final result."
         ]
 
         level3_questions = [
-            "Write IsPrime(n) that returns true if n is prime, else false.",
-            "Given list L, find and display the maximum value.",
-            "Count vowels in a string s and display the count.",
-            "Reverse list L into a new list R (do not modify L).",
-            "Remove all 0s from list L while keeping order; store result in NEW.",
-            "Find the second-largest number in list L (assume all values are distinct).",
-            "Return true if string s is a palindrome, else false.",
-            "Roll a 6-sided die 100 times; count how many times the roll is 6; display count.",
-            "Write CountMatches(L, target) that returns how many elements equal target.",
-            "Given list L, display how many values are greater than the average of the list."
+            "Actions: MOVE, PICK_KEY, HIT_WALL, UNKNOWN_ACTION, MOVE, OPEN_DOOR, MOVE, REACHED_EXIT. Result = status starts 'playing'. Loop once per action; handle unknown actions safely; output final result.",
+            "Actions can be empty. If no actions, result should stay 'none'. Otherwise loop once per action; interpret MOVE (+1 score) and HIT_WALL (-1 score). Output final result.",
+            "Actions: MOVE, MOVE, HIT_WALL, PICK_KEY, OPEN_DOOR, HIT_WALL, REACHED_EXIT, MOVE. Result = score starts 0. Loop once per action; update score each time; output final result.",
+            "Actions: PICK_KEY, MOVE, OPEN_DOOR, MOVE, OPEN_DOOR, REACHED_EXIT, MOVE, HIT_WALL. Result = doorState starts 'locked'. Loop once per action; if OPEN_DOOR and no key keep locked; output final result.",
+            "Actions: HIT_WALL, HIT_WALL, MOVE, MOVE, UNKNOWN_ACTION, MOVE, REACHED_EXIT, MOVE. Result = lives starts 3. Loop once per action; HIT_WALL -1, unknown action no change. Output final result.",
+            "Actions: MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE. Result = steps starts 0. Loop once per action; MOVE +1. Output final result.",
+            "Actions: PICK_KEY, PICK_KEY, OPEN_DOOR, OPEN_DOOR, MOVE, REACHED_EXIT, UNKNOWN_ACTION, MOVE. Result = keys starts 0. Loop once per action; PICK_KEY +1, OPEN_DOOR uses a key if available. Output final result.",
+            "Actions: MOVE, HIT_WALL, MOVE, HIT_WALL, MOVE, HIT_WALL, MOVE, REACHED_EXIT. Result = damage starts 0. Loop once per action; HIT_WALL +1. Output final result.",
+            "Actions: MOVE, UNKNOWN_ACTION, MOVE, UNKNOWN_ACTION, MOVE, REACHED_EXIT, MOVE, HIT_WALL. Result = score starts 0. Loop once per action; unknown actions should not crash; output final result.",
+            "Actions: MOVE, PICK_KEY, MOVE, PICK_KEY, OPEN_DOOR, MOVE, REACHED_EXIT, HIT_WALL. Result = status starts 'playing'. Loop once per action; track keys and update status. Output final result."
         ]
 
         level4_questions = [
-            "Find the mode (most frequent value) of list L. If tie, return smaller value.",
-            "Merge two sorted lists A and B into one sorted list C.",
-            "Determine if two strings s1 and s2 are anagrams (same letters with same counts).",
-            "Remove duplicates from list L while keeping the first occurrence order.",
-            "Write BinarySearch(L, target) for sorted list L. Return index if found, else -1.",
-            "Rotate list L to the right by k steps (wrap around). Store in R.",
-            "Find the first pair of numbers in list L that adds to target. Return the pair, else [-1, -1].",
-            "Find the longest word in list W. If tie, choose the earliest one.",
-            "Run-length encode a string s (example: \"aaabb\" → \"a3b2\").",
-            "Determine if list L is almost sorted (sortable by swapping at most one pair)."
+            "Actions: MOVE, PICK_KEY, HIT_WALL, MOVE, OPEN_DOOR, MOVE, REACHED_EXIT, MOVE, HIT_WALL. Results = score and state. Loop once per action; update score and state; output final results.",
+            "Actions may include UNKNOWN_ACTION. Result = status starts 'playing'. Loop once per action; use if/else to handle known actions and a default for unknown. Output final result.",
+            "Actions: MOVE, MOVE, PICK_KEY, MOVE, OPEN_DOOR, HIT_WALL, MOVE, REACHED_EXIT, MOVE. Results = score and hasKey. Loop once per action; update both; output final results.",
+            "Actions: HIT_WALL, HIT_WALL, HIT_WALL, MOVE, MOVE, REACHED_EXIT, MOVE, MOVE. Result = lives starts 3 and score starts 0. Loop once per action; update both; output final results.",
+            "Actions: PICK_KEY, MOVE, PICK_KEY, OPEN_DOOR, OPEN_DOOR, MOVE, REACHED_EXIT, MOVE. Results = keys and doorState. Loop once per action; update both; output final results.",
+            "Actions: MOVE, MOVE, MOVE, HIT_WALL, MOVE, HIT_WALL, MOVE, HIT_WALL, MOVE. Result = damage starts 0 and steps starts 0. Loop once per action; update both; output final results.",
+            "Actions: MOVE, UNKNOWN_ACTION, MOVE, PICK_KEY, OPEN_DOOR, UNKNOWN_ACTION, MOVE, REACHED_EXIT. Results = score and status. Loop once per action; handle unknown actions safely; output final results.",
+            "Actions: OPEN_DOOR, MOVE, OPEN_DOOR, PICK_KEY, OPEN_DOOR, MOVE, REACHED_EXIT, MOVE. Results = hasKey and doorState. Loop once per action; update both; output final results.",
+            "Actions: MOVE, HIT_WALL, MOVE, HIT_WALL, PICK_KEY, MOVE, OPEN_DOOR, REACHED_EXIT. Results = score and doorState. Loop once per action; update both; output final results.",
+            "Actions can be empty. Results = score and status. If empty, keep defaults; otherwise loop once per action and update. Output final results."
         ]
 
         level5_questions = [
-            "You have list nextIndex; starting at index 1, detect if there is a cycle. Return true/false.",
-            "Given a grid of 0s and 1s, find if there is a path from (1,1) to (rows, cols). Return true/false.",
-            "Caesar Cipher: Write Encrypt(message, k) shifting letters forward by k with wrap-around.",
-            "Caesar Cipher: Write Decrypt(message, k) that reverses the shift.",
-            "Balanced parentheses: Given string s containing only ( and ), return true if balanced.",
-            "Sieve-style primes: Display all primes up to n using a mark-multiples approach.",
-            "Game winner: n stones, players take 1 or 2; return true if first player can force win.",
-            "Given transactions (name, amount) in list T, output each name’s total balance.",
-            "Sort strings by length; if tie, sort alphabetically. Store sorted list in S.",
-            "Find the smallest missing positive integer in list L."
+            "Final mastery: Gather all actions in order. Define what the result represents. Loop once per action, use if/else to interpret each action, update the result, and output the final result. Handle unknown actions safely.",
+            "Final mastery: Actions may be empty or include UNKNOWN_ACTION. Design the full algorithm: loop once per action, decide with if/else, update result(s), output final result(s).",
+            "Final mastery: Given an ordered action list from a maze run, build the algorithm that processes each action, updates result state, and outputs the final result. Handle unknown actions.",
+            "Final mastery: Create a complete action-processing algorithm that loops once per action, uses decisions for each action type, updates results consistently, and outputs the final result.",
+            "Final mastery: Write the full action-based algorithm. Define result, loop per action, interpret with if/else, update result, output final result. Include a safe default for unknown actions.",
+            "Final mastery: Design the solution for action-based scoring. Loop once per action, update score/state, output final result, and handle unknown actions.",
+            "Final mastery: Build the complete action-processing flow. Gather actions, loop once per action, interpret each action, update result, output final result.",
+            "Final mastery: Create the final code answer pattern using actions and results. Loop once per action, decide with if/else, update result, output final result.",
+            "Final mastery: Show the full algorithm for actions-in-order. Handle empty action list, unknown actions, and output the final result.",
+            "Final mastery: Produce the final algorithm structure: gather actions, loop once per action, interpret actions, update result(s), output final result(s)."
         ]
 
         # 10 rows, each row has 5 questions (one per level)

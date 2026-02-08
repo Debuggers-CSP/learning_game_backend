@@ -140,14 +140,14 @@ app.config['PIKA_MODEL'] = os.environ.get('PIKA_MODEL') or None
 
 # Endgame settings
 app.config['FINAL_CODE_ANSWER'] = os.environ.get('FINAL_CODE_ANSWER') or (
-   "To earn the mastery, you need to do the following: "
-   "You begin by deciding what the final result should represent. "
-   "You gather every action the player made in the order they happened. "
-   "You then create a loop that runs once for each action. "
-   "Each time the loop runs, you read the current action, determine what it means, "
-   "and update the final result. Make sure the loop runs one action to get the badge. "
-   "You should continue looping until there are no actions left. "
-   "When the loop ends, you output the final result."
+   "To earn mastery, do the following: "
+   "Define what the result represents. "
+   "Gather every action in order. "
+   "Create a loop that runs once per action. "
+   "Each time the loop runs, read the current action, decide what it means, "
+   "and update the result. "
+   "If an action is unknown, handle it safely. "
+   "When the loop ends, output the final result."
 )
 
 
