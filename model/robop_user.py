@@ -20,6 +20,7 @@ class RobopUser(db.Model):
     
     # Relationship to link badges to users
     badges = db.relationship("UserBadge", backref="user", lazy=True)
+    progress = db.relationship("Progress", backref="user", uselist=False, lazy=True)
 
     def __init__(self, uid, first_name, last_name, password):
         self._uid = uid
@@ -145,6 +146,59 @@ class StationHint(db.Model):
         self.module_key = key
         self.hint_collection = hints
 
+class StationHint(db.Model):
+    """Satisfies the 'List' requirement for the Create PT"""
+    __tablename__ = "StationHint"
+    id = db.Column(db.Integer, primary_key=True)
+    module_key = db.Column(db.String(64), unique=True, nullable=False)
+    hint_collection = db.Column(db.JSON, nullable=False)
+
+    def __init__(self, key, hints):
+        self.module_key = key
+        self.hint_collection = hints
+
+
+class Progress(db.Model):  # START ADDING HERE
+    """Tracks user's game/level progress"""
+    __tablename__ = "Progress"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("RobopUser.id"), nullable=False, unique=True)
+    
+    _current_sector = db.Column(db.Integer, default=1, nullable=False)
+    _current_module = db.Column(db.Integer, default=0, nullable=False)
+    _total_score = db.Column(db.Integer, default=0, nullable=False)
+    _completed_modules = db.Column(db.JSON, default=list, nullable=False)
+    _last_played = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self._current_sector = 1
+        self._current_module = 0
+        self._total_score = 0
+        self._completed_modules = []
+    
+    def complete_module(self, sector_id, module_id, score=0):
+        """Mark a module as completed"""
+        module_key = f"s{sector_id}_m{module_id}"
+        
+        if self._completed_modules is None:
+            self._completed_modules = []
+        
+        if module_key not in self._completed_modules:
+            self._completed_modules.append(module_key)
+        
+        self._total_score += score
+        self._last_played = datetime.utcnow()
+        db.session.commit()
+    
+    def to_dict(self):
+        return {
+            "current_sector": self._current_sector,
+            "current_module": self._current_module,
+            "total_score": self._total_score,
+            "completed_modules": self._completed_modules if self._completed_modules else []
+        }
 
 def initRobopUsers():
     """Create RobopUser table and (optionally) seed a demo user."""
@@ -207,3 +261,10 @@ def initRobopUsers():
                     )
             db.session.commit()
             print("✅ Seed badges updated to new model.")
+         # Create progress for all users
+        for user in RobopUser.query.all():
+            if not Progress.query.filter_by(user_id=user.id).first():
+                progress = Progress(user_id=user.id)
+                db.session.add(progress)
+        db.session.commit()
+        print("✅ Progress created for all users.")
