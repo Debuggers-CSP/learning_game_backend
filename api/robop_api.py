@@ -49,6 +49,7 @@ def _require_session_uid():
 @robop_api.route("/me", methods=["OPTIONS"])
 @robop_api.route("/register", methods=["OPTIONS"])
 @robop_api.route("/assign_badge", methods=["OPTIONS"])
+@robop_api.route("/fetch_badges", methods=["OPTIONS"])
 @robop_api.route("/badge_thresholds", methods=["OPTIONS"])
 @robop_api.route("/autofill", methods=["OPTIONS"])
 @robop_api.route("/get_hint", methods=["OPTIONS"])
@@ -172,6 +173,24 @@ def me():
 # Badge routes (require session)
 # ----------------------------
 
+@robop_api.route("/fetch_badges", methods=["GET"])
+def fetch_badges():
+    uid, err = _require_session_uid()
+    if err:
+        return err
+
+    user = RobopUser.query.filter_by(_uid=uid).first()
+    if not user:
+        return jsonify({"success": False, "message": "User not found"}), 404
+
+    # Fetch all badges for this user
+    badges = UserBadge.query.filter_by(user_id=user.id).all()
+    
+    # Use the to_dict() method from your model
+    return jsonify([b.to_dict() for b in badges]), 200
+
+# Remember to add "/badges" to your robop_preflight route list at the top of robop_api.py!
+
 @robop_api.route("/badge_thresholds", methods=["GET"])
 def get_thresholds():
     thresholds = BadgeThreshold.query.order_by(BadgeThreshold._threshold.desc()).all()
@@ -219,6 +238,8 @@ def assign_badge():
         # This will print the exact error to your terminal so you can see it
         print(f"Error saving badge: {e}") 
         return jsonify({"success": False, "message": str(e)}), 500
+    
+    
 
 # ---------------------------
 # AUTOFILL
