@@ -18,7 +18,7 @@ class RobopUser(db.Model):
     _created = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     _last_login = db.Column(db.DateTime, nullable=True)
     
-    # APPENDED: Relationship to link badges to users
+    # Relationship to link badges to users
     badges = db.relationship("UserBadge", backref="user", lazy=True)
 
     def __init__(self, uid, first_name, last_name, password):
@@ -65,12 +65,10 @@ class RobopUser(db.Model):
             "id": self.id,
             "firstName": self.first_name,
             "lastName": self.last_name,
-            "github": self.github,
-            # do NOT return raw password
-            "created": self.created.isoformat() if self.created else None
+            "github": getattr(self, "github", None),
+            "created": self._created.isoformat() if self._created else None
         }
 
-    # Keep compatibility with APIs that expect to_dict()
     def to_dict(self):
         """Return a JSON-safe representation of this user."""
         return {
@@ -89,7 +87,7 @@ class RobopUser(db.Model):
         db.session.commit()
 
 
-# --- APPENDED: NEW MODELS FOR BADGE FEATURE ---
+# --- UPDATED MODELS FOR BADGE FEATURE ---
 
 class BadgeThreshold(db.Model):
     """Table to store achievement thresholds (The 'List' for CPT)"""
@@ -106,25 +104,31 @@ class BadgeThreshold(db.Model):
         return {"name": self._name, "threshold": self._threshold}
 
 class UserBadge(db.Model):
-    """Table to store badges earned by specific users"""
+    """Table to store badges earned by specific users with CPT metrics"""
     __tablename__ = "UserBadge"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("RobopUser.id"), nullable=False)
     _sector_id = db.Column(db.Integer, nullable=False)
-    _score = db.Column(db.Integer, nullable=False)
+    _module_id = db.Column(db.Integer, nullable=False) # Robot=0, Pseudo=1, MCQ=2
+    _attempts = db.Column(db.Integer, nullable=False)
+    _used_autofill = db.Column(db.Boolean, nullable=False, default=False)
     _badge_name = db.Column(db.String(64), nullable=False)
     _date_earned = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def __init__(self, user_id, sector_id, score, badge_name):
+    def __init__(self, user_id, sector_id, module_id, attempts, used_autofill, badge_name):
         self.user_id = user_id
         self._sector_id = sector_id
-        self._score = score
+        self._module_id = module_id
+        self._attempts = attempts
+        self._used_autofill = used_autofill
         self._badge_name = badge_name
 
     def to_dict(self):
         return {
             "sector": self._sector_id,
-            "score": self._score,
+            "module": self._module_id,
+            "attempts": self._attempts,
+            "autofill": self._used_autofill,
             "badge": self._badge_name,
             "date": self._date_earned.isoformat()
         }
@@ -145,10 +149,10 @@ class StationHint(db.Model):
 def initRobopUsers():
     """Create RobopUser table and (optionally) seed a demo user."""
     with app.app_context():
-        # Create DB tables (includes RobopUser, BadgeThreshold, and UserBadge)
+        # Create DB tables
         db.create_all()
 
-        # APPENDED: Seed Thresholds if table is empty
+        # Seed Thresholds if table is empty
         if not BadgeThreshold.query.first():
             thresholds = [
                 BadgeThreshold("Gold", 95),
@@ -167,16 +171,13 @@ def initRobopUsers():
                 uid="demo_robop",
                 first_name="Demo",
                 last_name="Robop",
-                password=app.config["DEFAULT_PASSWORD"]
+                password=app.config.get("DEFAULT_PASSWORD", "password123")
             )
             demo.create()
             print("✅ RobopUser table ready + seeded demo user.")
         except IntegrityError:
             db.session.rollback()
             print("✅ RobopUser table ready (demo user already exists).")
-        except Exception as e:
-            db.session.rollback()
-            print(f"⚠️ RobopUser init error: {e}")
         
         # Seed test users
         test_users = [
@@ -188,31 +189,21 @@ def initRobopUsers():
         for u in test_users:
             if not RobopUser.query.filter_by(_uid=u.uid).first():
                 db.session.add(u)
-
         db.session.commit()
 
-        # Seed badges for those same users
+        # Seed badges for those same users with new model structure
         if not UserBadge.query.first():
-            thresholds = BadgeThreshold.query.all()
-
-            for user in RobopUser.query.filter(
-                RobopUser._uid.in_(["alice", "bob", "charlie"])
-            ).all():
-
+            for user in RobopUser.query.filter(RobopUser._uid.in_(["alice", "bob", "charlie"])).all():
                 for sector in range(1, 4):
-                    score = randint(50, 100)
-                    badge = max(
-                        thresholds,
-                        key=lambda t: score >= t._threshold
-                    )._name
-
                     db.session.add(
                         UserBadge(
-                            user_id=user.id,   # ← integer FK
+                            user_id=user.id,
                             sector_id=sector,
-                            score=score,
-                            badge_name=badge
+                            module_id=randint(0,2),
+                            attempts=randint(1,5),
+                            used_autofill=choice([True, False]),
+                            badge_name="Seed Badge"
                         )
                     )
-
             db.session.commit()
+            print("✅ Seed badges updated to new model.")

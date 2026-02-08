@@ -49,6 +49,7 @@ cors = CORS(
          'http://127.0.0.1:8081',
        'https://open-coding-society.github.io',
        'https://pages.opencodingsociety.com',
+       'https://debuggers-csp.github.io',
    ],
    methods=["GET", "POST", "PUT", "OPTIONS"]
 )
@@ -76,6 +77,9 @@ JWT_TOKEN_NAME = os.environ.get('JWT_TOKEN_NAME') or 'jwt_python_flask'
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_NAME
 app.config['JWT_TOKEN_NAME'] = JWT_TOKEN_NAME
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
+
 
 
 # Database settings
