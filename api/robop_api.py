@@ -186,23 +186,29 @@ def assign_badge():
 
     user = RobopUser.query.filter_by(_uid=uid).first()
     if not user:
-        session.pop("robop_uid", None)
-        session.modified = True
         return jsonify({"success": False, "message": "Session invalid."}), 401
 
     data = _get_json()
+    
+    # Extract the 5 pieces of data from the frontend
     sector_id = data.get("sector_id")
-    score = data.get("score")
+    module_id = data.get("module_id")
+    attempts = data.get("attempts")
+    used_autofill = data.get("used_autofill")
     badge_name = data.get("badge_name")
 
-    if sector_id is None or score is None or not badge_name:
-        return jsonify({"success": False, "message": "Missing badge data"}), 400
+    # Check for missing data
+    if None in [sector_id, module_id, attempts, badge_name]:
+        return jsonify({"success": False, "message": "Missing required badge metrics"}), 400
 
     try:
+        # Pass ALL 6 arguments required by the new UserBadge.__init__
         new_badge = UserBadge(
             user_id=user.id,
             sector_id=sector_id,
-            score=score,
+            module_id=module_id,
+            attempts=attempts,
+            used_autofill=used_autofill,
             badge_name=badge_name
         )
         db.session.add(new_badge)
@@ -210,8 +216,9 @@ def assign_badge():
         return jsonify({"success": True, "message": f"Badge '{badge_name}' saved!"}), 201
     except Exception as e:
         db.session.rollback()
+        # This will print the exact error to your terminal so you can see it
+        print(f"Error saving badge: {e}") 
         return jsonify({"success": False, "message": str(e)}), 500
-
 
 # ---------------------------
 # AUTOFILL
