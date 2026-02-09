@@ -14,7 +14,7 @@ else
 fi
 
 # Run the Flask app
-export FLASK_PORT=${FLASK_PORT:-4000}
+export FLASK_PORT=${FLASK_PORT:-3000}
 echo "✓ Starting Flask on http://localhost:${FLASK_PORT}"
 echo ""
 PYTHON_RUNNER_PORT=${PYTHON_RUNNER_PORT:-5001}
