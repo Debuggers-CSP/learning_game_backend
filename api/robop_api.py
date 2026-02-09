@@ -56,6 +56,7 @@ def _require_session_uid():
 @robop_api.route("/generate_hints", methods=["OPTIONS"])
 @robop_api.route("/ai_chat", methods=["OPTIONS"])
 @robop_api.route("/ai_health", methods=["OPTIONS"])
+@robop_api.route("/progress", methods=["OPTIONS"])
 def robop_preflight():
     return _preflight_ok()
 
@@ -239,7 +240,63 @@ def assign_badge():
         print(f"Error saving badge: {e}") 
         return jsonify({"success": False, "message": str(e)}), 500
     
-    
+@robop_api.route("/progress", methods=["GET"])
+def get_progress():
+    """Get current user's progress"""
+    uid, err = _require_session_uid()
+    if err:
+        return err
+
+    user = RobopUser.query.filter_by(_uid=uid).first()
+    if not user:
+        return jsonify({"success": False, "message": "User not found"}), 404
+
+    # Create progress if it doesn't exist
+    if not user.progress:
+        from model.robop_user import Progress
+        progress = Progress(user_id=user.id)
+        db.session.add(progress)
+        db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "progress": user.progress.to_dict()
+    }), 200  
+
+@robop_api.route("/progress", methods=["POST"])
+def update_progress():
+    """Update progress when user completes a module"""
+    uid, err = _require_session_uid()
+    if err:
+        return err
+
+    user = RobopUser.query.filter_by(_uid=uid).first()
+    if not user:
+        return jsonify({"success": False, "message": "User not found"}), 404
+
+    data = _get_json()
+    sector = data.get("sector")
+    module = data.get("module")
+    score = data.get("score", 0)
+
+    if sector is None or module is None:
+        return jsonify({"success": False, "message": "Missing sector or module"}), 400
+
+    # Create progress if it doesn't exist
+    if not user.progress:
+        from model.robop_user import Progress
+        progress = Progress(user_id=user.id)
+        db.session.add(progress)
+        db.session.commit()
+
+    # Update progress
+    user.progress.complete_module(sector, module, score)
+
+    return jsonify({
+        "success": True,
+        "message": f"Progress updated for sector {sector}, module {module}",
+        "progress": user.progress.to_dict()
+    }), 200
 
 # ---------------------------
 # AUTOFILL
