@@ -145,19 +145,6 @@ class StationHint(db.Model):
     def __init__(self, key, hints):
         self.module_key = key
         self.hint_collection = hints
-
-class StationHint(db.Model):
-    """Satisfies the 'List' requirement for the Create PT"""
-    __tablename__ = "StationHint"
-    id = db.Column(db.Integer, primary_key=True)
-    module_key = db.Column(db.String(64), unique=True, nullable=False)
-    hint_collection = db.Column(db.JSON, nullable=False)
-
-    def __init__(self, key, hints):
-        self.module_key = key
-        self.hint_collection = hints
-
-
 class Progress(db.Model):  # START ADDING HERE
     """Tracks user's game/level progress"""
     __tablename__ = "Progress"
