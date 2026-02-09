@@ -68,7 +68,7 @@ def _strip_code_blocks(text: str) -> str:
     return " ".join(text.split())
 
 
-def _call_openai(prompt: str, text: str) -> str:
+def _call_openai(prompt: str, text: str, strip_code_blocks: bool = True) -> str:
     api_key = current_app.config.get("OPENAI_API_KEY")
     model = current_app.config.get("OPENAI_MODEL") or "gpt-4o-mini"
     server = current_app.config.get("OPENAI_SERVER") or "https://api.openai.com/v1/chat/completions"
@@ -98,7 +98,9 @@ def _call_openai(prompt: str, text: str) -> str:
             return ""
         openai_json = response.json()
         raw_text = openai_json["choices"][0]["message"]["content"]
-        return _strip_code_blocks(raw_text)
+        if strip_code_blocks:
+            return _strip_code_blocks(raw_text)
+        return (raw_text or "").strip()
     except (requests.RequestException, KeyError, IndexError, TypeError):
         return ""
 
@@ -481,23 +483,7 @@ def _chat_response(message: str, history: list, role: str = "") -> dict:
     if not lowered.strip():
         return {
             "success": True,
-            "reply": "I’m here to help—what part of the logic or requirements is confusing you?"
-        }
-
-    if any(phrase in lowered for phrase in [
-        "need help",
-        "i need help",
-        "help me",
-        "help"
-    ]):
-        guidance = _generate_guidance(message)
-        return {
-            "success": True,
-            "reply": (
-                "I’ve generated a step-by-step walkthrough with visuals. "
-                "Use the guidance panel to follow along, and ask if a specific step is confusing."
-            ),
-            "guidance": guidance
+            "reply": "pass"
         }
 
     if any(phrase in lowered for phrase in [
@@ -541,58 +527,29 @@ def _chat_response(message: str, history: list, role: str = "") -> dict:
             "reply": "I couldn’t generate a video right now. Please try again in a moment."
         }
 
-    if any(phrase in lowered for phrase in [
-        "full code",
-        "complete solution",
-        "write the code",
-        "give me the answer",
-        "final answer",
-        "code example"
-    ]):
-        return {
-            "success": True,
-            "reply": (
-                "I can’t provide a full solution, but I can guide you step‑by‑step. "
-                "Tell me what you’ve tried and which step feels stuck."
-            )
-        }
-
     role_instructions = ""
     if role_key == "hint_coach":
         role_instructions = (
-            "You are the Hint Coach. Give small clues only, one step at a time. "
-            "Do not reveal the full solution. Ask a short guiding question. "
+            "You are the Hint Coach. Provide a minimal code nudge or stub with TODO comments. "
         )
     elif role_key == "debugger":
         role_instructions = (
-            "You are the Debugger. Point out likely bug locations or logic gaps without giving full code. "
-            "Be specific about where to look in the reasoning. "
+            "You are the Debugger. Provide a corrected code snippet focused on the likely bug location. "
         )
     elif role_key == "teacher":
         role_instructions = (
-            "You are the Teacher. Explain the concept simply and clearly, using plain language. "
-            "Keep it short and avoid full solutions. "
+            "You are the Teacher. Provide a clean, readable reference solution with brief comments. "
         )
     elif role_key == "checker":
         role_instructions = (
-            "You are the Checker. Confirm whether the approach matches the expected behavior. "
-            "If missing, say what to verify, but do not give full code. "
+            "You are the Checker. Provide the corrected code that matches the expected behavior. "
         )
 
     prompt = (
-        "You are a ChatGPT‑style tutoring assistant for a student coding maze endgame. "
+        "You are a ChatGPT‑style coding assistant for a student coding maze endgame. "
         f"{role_instructions}"
-        "Be friendly, concise, and practical. Do NOT provide full code or pseudocode. "
-        "Assume the student is confused and needs step‑by‑step UI guidance. "
-        "If helpful, suggest which UI button to click next (Generate Walkthrough, Play Walkthrough, "
-        "Check Answer, Save Completion). "
-        "Focus on the student’s journey: what they tried, learned, and chose. "
-        "Ask focused, game‑context questions (actions taken, decision points, outcomes) and give next steps. "
-        "Respond in this format:\n"
-        "Summary: <1–2 short sentences>\n"
-        "Guidance: <2–4 bullet points>\n"
-        "Checkpoint: <one short question about their in‑game choices or learning>\n"
-        "Keep the total response under 120 words."
+        "Return ONLY Python code. Do not use Markdown. Do not include explanations. "
+        "If details are missing, return a short code comment asking for the needed info."
     )
     history_text = ""
     for item in history[-10:]:
@@ -600,17 +557,13 @@ def _chat_response(message: str, history: list, role: str = "") -> dict:
         content = item.get("content") or ""
         history_text += f"{role}: {content}\n"
 
-    openai_text = _call_openai(prompt, f"Conversation:\n{history_text}\nUser: {message}")
+    openai_text = _call_openai(prompt, f"Conversation:\n{history_text}\nUser: {message}", strip_code_blocks=False)
     if openai_text:
-        return {"success": True, "reply": _strip_code_blocks(openai_text).strip()}
+        return {"success": True, "reply": openai_text.strip()}
 
     return {
         "success": True,
-        "reply": (
-            "Summary: I can help you connect your game journey to the final solution.\n"
-            "Guidance: • Describe the last challenge you completed • Share one key choice you made and why • Note what you learned from that step\n"
-            "Checkpoint: Which in‑game decision felt most important to your answer?"
-        )
+        "reply": "# Please share the exact requirements and expected output."
     }
 
 
@@ -624,6 +577,24 @@ def _get_earned_badges(player_id: int) -> list:
     return [row.to_dict() for row in badge_rows]
 
 
+def _get_earned_badges_frontend(player_id: int) -> list:
+    badge_rows = (
+        PlayerBadge.query
+        .filter_by(player_id=player_id)
+        .order_by(PlayerBadge.timestamp.asc())
+        .all()
+    )
+    return [
+        {
+            "badgeId": row.badge_id,
+            "badgeName": row.badge.badge_name if row.badge else None,
+            "attempts": row.attempts,
+            "earnedAt": row.timestamp.isoformat() if row.timestamp else None,
+        }
+        for row in badge_rows
+    ]
+
+
 def _get_or_create_player(player_id: int) -> Player:
     player = Player.query.get(player_id)
     if player:
@@ -632,6 +603,31 @@ def _get_or_create_player(player_id: int) -> Player:
     db.session.add(player)
     db.session.commit()
     return player
+
+
+@endgame_api.route("/player/<int:player_id>", methods=["GET"])
+def get_player(player_id):
+    player = _get_or_create_player(player_id)
+    data = player.to_dict()
+    data["display_name"] = player.username
+    data["character_class"] = None
+    return jsonify({"success": True, "player": data}), 200
+
+
+@endgame_api.route("/api/endgame/player/<int:player_id>", methods=["GET"])
+def get_player_api(player_id):
+    return get_player(player_id)
+
+
+@endgame_api.route("/player/<int:player_id>/badges", methods=["GET"])
+def get_player_badges(player_id):
+    _get_or_create_player(player_id)
+    return jsonify({"success": True, "badges": _get_earned_badges_frontend(player_id)}), 200
+
+
+@endgame_api.route("/api/endgame/player/<int:player_id>/badges", methods=["GET"])
+def get_player_badges_api(player_id):
+    return get_player_badges(player_id)
 
 
 @endgame_api.route("/player/<int:player_id>/score", methods=["GET"])
@@ -646,11 +642,21 @@ def get_player_score(player_id):
     )
 
     earned_badges = [row.to_dict() for row in badge_rows]
+    attempts_per_stop = [
+        {
+            "badge_id": row.badge_id,
+            "badge_name": row.badge.badge_name if row.badge else None,
+            "attempts": row.attempts,
+            "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+        }
+        for row in badge_rows
+    ]
 
     response = {
         "success": True,
         "player": player.to_dict(),
         "earned_badges": earned_badges,
+        "attempts_per_stop": attempts_per_stop,
         "attempts_by_badge": [
             {
                 "badge_id": row.badge_id,
@@ -796,32 +802,37 @@ def complete_player(player_id):
     if attempts is None:
         return jsonify({"success": False, "message": "Missing attempts"}), 400
 
+    badge = None
     if badge_id is None and badge_name:
         badge = Badge.query.filter_by(badge_name=badge_name).first()
         badge_id = badge.id if badge else None
-
-    if badge_id is None:
-        return jsonify({"success": False, "message": "Missing badge_id or badge_name"}), 400
-
-    badge = Badge.query.get(badge_id)
-    if not badge:
-        return jsonify({"success": False, "message": "Badge not found"}), 404
+    elif badge_id is not None:
+        badge = Badge.query.get(badge_id)
+        if not badge:
+            return jsonify({"success": False, "message": "Badge not found"}), 404
 
     player.completed_at = timestamp or datetime.utcnow()
     player.final_attempts = attempts
-    player.final_badge_id = badge_id
-
-    final_badge_row = PlayerBadge(
-        player_id=player.id,
-        badge_id=badge_id,
-        attempts=attempts,
-        timestamp=timestamp or datetime.utcnow()
-    )
-
-    db.session.add(final_badge_row)
+    if badge_id is not None:
+        player.final_badge_id = badge_id
+        final_badge_row = PlayerBadge(
+            player_id=player.id,
+            badge_id=badge_id,
+            attempts=attempts,
+            timestamp=timestamp or datetime.utcnow()
+        )
+        db.session.add(final_badge_row)
     db.session.commit()
 
-    return jsonify({"success": True, "message": "Completion saved"}), 200
+    return jsonify({
+        "success": True,
+        "message": "Completion saved",
+        "final": {
+            "completed_at": player.completed_at.isoformat() if player.completed_at else None,
+            "final_attempts": player.final_attempts,
+            "final_badge": badge.to_dict() if badge else None,
+        }
+    }), 200
 
 
 @endgame_api.route("/api/endgame/player/<int:player_id>/complete", methods=["POST"])

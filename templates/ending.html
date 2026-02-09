@@ -353,8 +353,8 @@
             <div class="card">
                 <div class="card-body">
                     <h3>💬 Hint Coach Chatbot</h3>
-                    <p class="helper-text">Pick a helper role so you get the right type of feedback without full solutions.</p>
-                    <p class="helper-text">Guardrail: The chatbot will not provide full fixes. To run code in chat, paste a Python code block (```python ... ```).</p>
+                    <p class="helper-text">Pick a helper role so you get the right type of code answer.</p>
+                    <p class="helper-text">Guardrail: The chatbot replies with Python code only (no explanations).</p>
                     <div class="role-badges" id="chatRoles">
                         <button type="button" class="role-badge" data-role="hint">Hint Coach</button>
                         <button type="button" class="role-badge" data-role="debugger">Debugger</button>
@@ -366,7 +366,7 @@
                             <div class="chat-bubble chat-ai">Hint Coach: Tell me the level and what you think the bug is.</div>
                         </div>
                         <div class="chat-input">
-                            <input id="chatInput" type="text" placeholder="Ask for help or paste ```python ...``` to run code" />
+                            <input id="chatInput" type="text" placeholder="Ask a question and get code-only replies" />
                             <button class="btn btn-primary" id="sendChat">Send</button>
                         </div>
                         <div class="mt-3">
