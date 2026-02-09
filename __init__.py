@@ -41,6 +41,8 @@ cors = CORS(
          'http://127.0.0.1:3000',
          'http://localhost:5173',
          'http://127.0.0.1:5173',
+         'http://localhost:4173',
+         'http://127.0.0.1:4173',
          'http://localhost:5500',
          'http://127.0.0.1:5500',
          'http://localhost:8080',
@@ -77,13 +79,19 @@ JWT_TOKEN_NAME = os.environ.get('JWT_TOKEN_NAME') or 'jwt_python_flask'
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_NAME
 app.config['JWT_TOKEN_NAME'] = JWT_TOKEN_NAME
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
-app.config["SESSION_COOKIE_SECURE"] = True
+
+# In local dev over http, Secure cookies are not sent. Enable Secure+SameSite=None only in prod.
+_env_is_production = str(os.environ.get('IS_PRODUCTION', '')).strip().lower() in {
+   '1', 'true', 'yes', 'y', 'on'
+}
+app.config["IS_PRODUCTION"] = _env_is_production
+app.config["SESSION_COOKIE_SAMESITE"] = "None" if app.config["IS_PRODUCTION"] else "Lax"
+app.config["SESSION_COOKIE_SECURE"] = True if app.config["IS_PRODUCTION"] else False
 
 
 
 # Database settings
-IS_PRODUCTION = os.environ.get('IS_PRODUCTION') or None
+IS_PRODUCTION = app.config["IS_PRODUCTION"]
 dbName = 'user_management'
 DB_ENDPOINT = os.environ.get('DB_ENDPOINT') or None
 DB_USERNAME = os.environ.get('DB_USERNAME') or None
