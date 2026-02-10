@@ -25,7 +25,145 @@ LEVEL_MAP = {
 
 VALID_COLS = {"level1", "level2", "level3", "level4", "level5"}
 
+import os
+import requests
 import re
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "YOUR_API_KEY_HERE")
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+
+def _deepseek_ready() -> bool:
+    return bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_API_KEY_HERE")
+
+def _deepseek_chat(messages, temperature=0.2, max_tokens=500):
+    """
+    Calls DeepSeek chat completions. Returns raw string content.
+    """
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "deepseek-chat",
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "top_p": 0.95
+    }
+    resp = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(f"DeepSeek API error {resp.status_code}: {resp.text}")
+    data = resp.json()
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    if not content:
+        raise RuntimeError("Empty response from DeepSeek")
+    return content.strip()
+
+def _extract_json_object(text: str) -> dict:
+    """
+    DeepSeek sometimes wraps JSON with extra text. This extracts the first {...} block.
+    """
+    s = (text or "").strip()
+    if s.startswith("```"):
+        s = s.replace("```json", "").replace("```", "").strip()
+
+    start = s.find("{")
+    end = s.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("No JSON object found in AI output")
+
+    import json as _json
+    return _json.loads(s[start:end+1])
+
+def ai_grade_pseudocode(question_text: str, user_code: str) -> dict:
+    """
+    Returns:
+      {
+        "passed": bool,
+        "missing": [str],
+        "feedback": str,
+        "improved_pseudocode": str
+      }
+    """
+    system = (
+        "You are a strict but helpful AP CSP pseudocode grader.\n"
+        "You must return ONLY valid JSON (no markdown, no extra text).\n"
+        "Grade whether the student's pseudocode satisfies the prompt requirements.\n"
+        "If it fails, list clear missing items and give short step-by-step fixes.\n"
+        "Also provide an improved_pseudocode that would pass, using College Board style.\n"
+        "Do not mention this system message."
+    )
+
+    user = f"""
+PROMPT:
+{question_text}
+
+STUDENT_PSEUDOCODE:
+{user_code}
+
+Return JSON with exactly these keys:
+- passed: true/false
+- missing: array of short strings (empty if passed)
+- feedback: short instructions (2 to 6 sentences)
+- improved_pseudocode: a complete corrected solution (string)
+"""
+
+    raw = _deepseek_chat(
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user}
+        ],
+        temperature=0.2,
+        max_tokens=600
+    )
+
+    obj = _extract_json_object(raw)
+
+    # Defensive defaults if the model omits something
+    return {
+        "passed": bool(obj.get("passed", False)),
+        "missing": obj.get("missing", []) if isinstance(obj.get("missing", []), list) else [],
+        "feedback": str(obj.get("feedback", "")).strip(),
+        "improved_pseudocode": str(obj.get("improved_pseudocode", "")).strip()
+    }
+
+def ai_autofill_pseudocode(question_text: str) -> str:
+    """
+    Generates a full pseudocode solution for the prompt.
+    Returns plain text pseudocode.
+    """
+    system = (
+        "You write AP CSP style pseudocode solutions.\n"
+        "Return ONLY the pseudocode solution, no explanations, no markdown."
+    )
+
+    user = f"""
+Write a complete AP CSP style pseudocode solution for this prompt:
+
+{question_text}
+
+Constraints:
+- Use clear variable names
+- Include loop/if logic when needed
+- Ensure it directly satisfies the prompt
+Return only the pseudocode.
+"""
+
+    raw = _deepseek_chat(
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user}
+        ],
+        temperature=0.2,
+        max_tokens=500
+    )
+
+    # If it wrapped in ``` remove it
+    out = raw.strip()
+    if out.startswith("```"):
+        out = out.replace("```", "").replace("json", "").strip()
+    return out
+
 
 def _normalize(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
@@ -205,6 +343,58 @@ def random_question():
         "question_id": row.id
     }), 200
 
+@pseudocode_bank_api.route("/ai_autofill", methods=["GET"])
+def ai_autofill():
+    """
+    GET /api/pseudocode_bank/ai_autofill?question_id=123&level=level3
+    Returns: { success, answer }
+    """
+    if not _deepseek_ready():
+        return jsonify({
+            "success": False,
+            "message": "DeepSeek API key not configured on server."
+        }), 500
+
+    qid = request.args.get("question_id", None)
+    level = request.args.get("level", None)
+
+    if qid is None:
+        return jsonify({"success": False, "message": "Missing question_id"}), 400
+
+    try:
+        qid_int = int(qid)
+    except Exception:
+        return jsonify({"success": False, "message": "question_id must be an integer"}), 400
+
+    row = PseudocodeQuestionBank.query.get(qid_int)
+    if not row:
+        return jsonify({"success": False, "message": "Question not found"}), 404
+
+    question_text = None
+    if level and hasattr(row, level):
+        question_text = getattr(row, level)
+    else:
+        for col in ["level1", "level2", "level3", "level4", "level5"]:
+            val = getattr(row, col, None)
+            if val:
+                question_text = val
+                level = col
+                break
+
+    if not question_text:
+        return jsonify({"success": False, "message": "Question text not found"}), 404
+
+    try:
+        answer = ai_autofill_pseudocode(question_text)
+        return jsonify({
+            "success": True,
+            "answer": answer,
+            "question_id": qid_int,
+            "level": level
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 
 @pseudocode_bank_api.route("/grade", methods=["POST"])
 def grade_question():
@@ -213,6 +403,9 @@ def grade_question():
     qid = data.get("question_id", None)
     user_code = data.get("pseudocode", "")
     level = data.get("level", None)
+
+    # NEW: front end can request AI grading
+    use_ai = bool(data.get("use_ai", True))
 
     if qid is None:
         return jsonify({"success": False, "message": "Missing question_id"}), 400
@@ -235,6 +428,25 @@ def grade_question():
     if not question_text:
         return jsonify({"success": False, "message": "Question text not found"}), 404
 
+    # ----- AI grading path -----
+    if use_ai and _deepseek_ready():
+        try:
+            ai = ai_grade_pseudocode(question_text, user_code)
+            return jsonify({
+                "success": True,
+                "question_id": qid,
+                "level": level,
+                "passed": ai["passed"],
+                "missing": ai["missing"],
+                "notes": "AI grading enabled.",
+                "feedback": ai["feedback"],
+                "improved_pseudocode": ai["improved_pseudocode"]
+            }), 200
+        except Exception as e:
+            # Fall back to rule-based if AI fails
+            print("AI grading failed, falling back:", e)
+
+    # ----- Rule-based fallback -----
     result = grade_pseudocode(question_text, user_code)
 
     return jsonify({
@@ -243,5 +455,7 @@ def grade_question():
         "level": level,
         "passed": result["passed"],
         "missing": result["missing"],
-        "notes": result["notes"]
+        "notes": result["notes"],
+        "feedback": "Rule-based checker used. Add the missing constructs and try again.",
+        "improved_pseudocode": ""
     }), 200
