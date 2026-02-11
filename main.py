@@ -1,13 +1,15 @@
 # imports from flask
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
-from api import robop_admin_api
-from flask import abort, redirect, render_template, request, send_from_directory, url_for, jsonify, current_app, g # import render_template from "public" flask libraries
-from flask_login import current_user, login_user, logout_user
+import os
+import requests
+
+from flask import (
+    abort, redirect, render_template, request, send_from_directory,
+    url_for, jsonify, current_app, g
+)
+from flask_login import current_user, login_user, logout_user, login_required
 from flask.cli import AppGroup
-from flask_login import current_user, login_required
-from flask import current_app
-from flask import render_template
 from werkzeug.security import generate_password_hash
 from dotenv import load_dotenv
 from api.jwt_authorize import token_required
@@ -56,14 +58,11 @@ from api.endgame_api import endgame_api
 from api.debug_challenge_api import debug_challenge_api
 from model.endgame import init_endgame_data
 from model.debug_challenge import init_debug_challenge_data
-from api.robop_admin_api import robop_admin_api
+
 
 # from model.announcement import Announcement ##temporary revert
 
 # server only Views
-
-import os
-import requests
 
 # Load environment variables
 load_dotenv()
@@ -76,7 +75,6 @@ app.config['KASM_API_KEY_SECRET'] = os.getenv('KASM_API_KEY_SECRET')
 
 # register URIs for api endpoints
 app.register_blueprint(python_exec_api)
-app.register_blueprint(robop_admin_api)
 app.register_blueprint(javascript_exec_api)
 app.register_blueprint(user_api)
 app.register_blueprint(section_api)
