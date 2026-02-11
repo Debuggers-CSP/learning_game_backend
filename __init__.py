@@ -52,6 +52,9 @@ cors = CORS(
        'https://open-coding-society.github.io',
        'https://pages.opencodingsociety.com',
        'https://debuggers-csp.github.io',
+       'http://robop.opencodingsociety.com',
+       'https://robop.opencodingsociety.com',
+
    ],
    methods=["GET", "POST", "PUT", "OPTIONS"]
 )
