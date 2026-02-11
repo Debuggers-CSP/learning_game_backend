@@ -35,7 +35,7 @@ from api.post import post_api  # Import the social media post API
 #from api.announcement import announcement_api ##temporary revert
 from api.pseudocode_bank_api import pseudocode_bank_api
 from model.pseudocode_bank import initPseudocodeQuestionBank
-
+from api.character_api import character_api
 
 # database Initialization functions
 from model.user import User, initUsers
@@ -98,7 +98,7 @@ app.register_blueprint(endgame_api)
 app.register_blueprint(debug_challenge_api)
 # app.register_blueprint(announcement_api) ##temporary revert
 app.register_blueprint(pseudocode_bank_api)
-
+app.register_blueprint(character_api)
 
 # Jokes file initialization
 with app.app_context():
