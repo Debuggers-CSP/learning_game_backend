@@ -566,6 +566,23 @@ app.cli.add_command(custom_cli)
 # this runs the flask application on the development server
 if __name__ == "__main__":
     host = "0.0.0.0"
-    port = app.config['FLASK_PORT']
-    print(f"** Server running: http://localhost:{port}")  # Pretty link
-    app.run(debug=True, host=host, port=port, use_reloader=False)
+    # Prefer environment FLASK_PORT if set, otherwise use configured value
+    try:
+        base_port = int(os.environ.get('FLASK_PORT') or app.config.get('FLASK_PORT', 8320))
+    except Exception:
+        base_port = 8320
+
+    max_tries = 10
+    port = base_port
+    for attempt in range(max_tries):
+        try:
+            print(f"** Server running: http://localhost:{port}")
+            app.run(debug=True, host=host, port=port, use_reloader=False)
+            break
+        except OSError as e:
+            msg = str(e).lower()
+            if 'address already in use' in msg or 'port' in msg and 'in use' in msg:
+                print(f"Port {port} is in use, trying next port...")
+                port += 1
+                continue
+            raise
