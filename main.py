@@ -3,6 +3,7 @@ from datetime import datetime
 from urllib.parse import urljoin, urlparse
 import os
 import requests
+import socket
 
 from flask import (
     abort, redirect, render_template, request, send_from_directory,
@@ -564,25 +565,35 @@ def generate_data():
 app.cli.add_command(custom_cli)
         
 # this runs the flask application on the development server
+def _find_available_port(host: str, preferred: int, max_tries: int = 50) -> int:
+    """Return an available port starting at `preferred` (on `host`)."""
+    port = preferred
+    for _ in range(max_tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind((host, port))
+                return port
+            except OSError:
+                port += 1
+                continue
+    raise OSError(f"No available ports found starting at {preferred}")
+
+
 if __name__ == "__main__":
     host = "0.0.0.0"
-    # Prefer environment FLASK_PORT if set, otherwise use configured value
     try:
         base_port = int(os.environ.get('FLASK_PORT') or app.config.get('FLASK_PORT', 8320))
     except Exception:
         base_port = 8320
 
-    max_tries = 10
-    port = base_port
-    for attempt in range(max_tries):
-        try:
-            print(f"** Server running: http://localhost:{port}")
-            app.run(debug=True, host=host, port=port, use_reloader=False)
-            break
-        except OSError as e:
-            msg = str(e).lower()
-            if 'address already in use' in msg or 'port' in msg and 'in use' in msg:
-                print(f"Port {port} is in use, trying next port...")
-                port += 1
-                continue
-            raise
+    try:
+        chosen_port = _find_available_port(host, base_port)
+    except OSError as e:
+        print(f"Failed to find available port: {e}")
+        raise
+
+    print(f"** Server running: http://localhost:{chosen_port}")
+    # Honor `FLASK_DEBUG` env if set; otherwise keep debug True for dev
+    debug_mode = os.environ.get('FLASK_DEBUG') is not None or app.debug
+    app.run(debug=debug_mode, host=host, port=chosen_port, use_reloader=False)
