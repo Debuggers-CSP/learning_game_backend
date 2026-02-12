@@ -14,8 +14,14 @@ else
 fi
 
 # Run the Flask app
-export FLASK_PORT=${FLASK_PORT:-3000}
+export FLASK_PORT=${FLASK_PORT:-4000}
 echo "✓ Starting Flask on http://localhost:${FLASK_PORT}"
 echo ""
+PYTHON_RUNNER_PORT=${PYTHON_RUNNER_PORT:-5001}
+if [ -f "python_backend/app.py" ]; then
+    echo "✓ Starting Python runner on http://localhost:${PYTHON_RUNNER_PORT}"
+    PYTHON_RUNNER_PORT=${PYTHON_RUNNER_PORT} python python_backend/app.py > python_runner.log 2>&1 &
+fi
+
 python main.py
 

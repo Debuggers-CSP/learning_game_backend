@@ -399,12 +399,12 @@
     </div>
 </div>
 
-<div id="pageData" data-player-id="{{ player_id }}" data-api-base="" hidden></div>
+<div id="pageData" data-player-id="{{ player_id }}" data-api-base="{{ api_base|default('') }}" hidden></div>
 
 <script>
     const pageData = document.getElementById("pageData");
     const playerId = pageData?.dataset.playerId;
-    const apiBase = pageData?.dataset.apiBase || "";
+    const apiBase = (pageData?.dataset.apiBase || "").replace(/\/$/, "");
 
     const badgeList = document.getElementById("badgeList");
     const attemptsTable = document.getElementById("attemptsTable");

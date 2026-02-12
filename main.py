@@ -166,7 +166,10 @@ def index():
 
 @app.route('/ending/<int:player_id>')
 def ending_page(player_id):
-    return render_template("ending.html", player_id=player_id)
+    api_base = os.getenv("PUBLIC_API_BASE", "").strip()
+    if not api_base:
+        api_base = request.host_url.rstrip("/")
+    return render_template("ending.html", player_id=player_id, api_base=api_base)
 
 
 @app.route('/debug-challenge')
