@@ -182,6 +182,14 @@ def debug_challenge_alias():
     return render_template("debug_challenge.html")
 
 
+# Handle socket.io requests to prevent errors
+# Socket.io server is not configured, but we prevent 404 errors
+@app.route('/socket.io/', defaults={'path': ''}, methods=['GET', 'POST', 'OPTIONS'])
+@app.route('/socket.io/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
+def socket_io_stub(path=''):
+    # Just return empty OK response - socket.io not configured
+    return '', 200
+
 
 @app.route('/users/table2')
 @login_required

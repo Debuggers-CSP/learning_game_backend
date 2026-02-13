@@ -5,10 +5,7 @@ import tempfile
 import os
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=[
-    "http://127.0.0.1:4000",
-    "http://localhost:4000",
-])
+CORS(app, supports_credentials=True, origins="*")
 
 
 def _run_code(code: str) -> str:
