@@ -562,7 +562,7 @@ def autofill_answer():
 
 # ========== DeepSeek AI Chat Integration ==========
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "YOUR_API_KEY_HERE")
+DEEPSEEK_API_KEY = "sk-b8001a4de18b463d8b59233263b479d7"
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
 SECTOR_CONTEXTS = {
@@ -699,6 +699,13 @@ def ai_chat():
 
         messages.append({"role": "user", "content": user_message})
 
+        # Ensure API key is configured
+        if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "YOUR_API_KEY_HERE":
+            return jsonify({
+                "success": False,
+                "message": "AI service not configured. Set DEEPSEEK_API_KEY in environment."
+            }), 503
+
         headers = {
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
             "Content-Type": "application/json"
@@ -720,17 +727,23 @@ def ai_chat():
         )
 
         if response.status_code != 200:
-            error_msg = f"DeepSeek API error: {response.status_code}"
+            # Provide clearer mapping for authentication errors vs other upstream failures
             try:
                 error_data = response.json()
-                error_msg += f" - {error_data.get('error', {}).get('message', 'Unknown error')}"
+                upstream_msg = error_data.get('error', {}).get('message') or error_data.get('message')
             except Exception:
-                pass
+                upstream_msg = None
+
+            if response.status_code == 401:
+                return jsonify({
+                    "success": False,
+                    "message": "AI service unauthorized. Check DEEPSEEK_API_KEY."
+                }), 502
 
             return jsonify({
                 "success": False,
-                "message": error_msg
-            }), 500
+                "message": f"DeepSeek API error: {response.status_code} - {upstream_msg or 'Unknown error'}"
+            }), 502
 
         result = response.json()
         ai_message = result.get("choices", [{}])[0].get("message", {}).get("content", "")
