@@ -156,6 +156,7 @@ def login():
         }), 401
 
     # ✅ Set server-side session (stored in cookie)
+    session.clear()
     session["robop_uid"] = user.uid
     session.permanent = True            # optional, if you want persistence
     session.modified = True             # ensure Set-Cookie is issued
@@ -208,16 +209,17 @@ def me():
 
 @robop_api.route("/fetch_badges", methods=["GET"])
 def fetch_badges():
-    uid, err = _require_session_uid()
-    if err:
-        return err
+      # 1. Get the ID directly from the URL parameters (?user_id=...)
+    user_id = request.args.get("user_id")
+    
+    if not user_id:
+        return jsonify({"success": False, "message": "User ID required"}), 400
+    else:
+        print(f"Fetching badges for user_id: {user_id}" )
 
-    user = RobopUser.query.filter_by(_uid=uid).first()
-    if not user:
-        return jsonify({"success": False, "message": "User not found"}), 404
-
-    # Fetch all badges for this user
-    badges = UserBadge.query.filter_by(user_id=user.id).all()
+    # 2. Fetch badges matching that specific user_id
+    badges = UserBadge.query.filter_by(user_id=user_id).all()
+   
     
     # Use the to_dict() method from your model
     return jsonify([b.to_dict() for b in badges]), 200
@@ -231,14 +233,17 @@ def get_thresholds():
 
 
 @robop_api.route("/assign_badge", methods=["POST"])
-def assign_badge():
-    uid, err = _require_session_uid()
-    if err:
-        return err
 
-    user = RobopUser.query.filter_by(_uid=uid).first()
-    if not user:
-        return jsonify({"success": False, "message": "Session invalid."}), 401
+def assign_badge():
+    user_id = request.args.get("user_id")
+    
+    if not user_id:
+        return jsonify({"success": False, "message": "User ID required"}), 400
+    else:
+        print(f"Assigning badges for user_id: {user_id}" )
+
+    
+   
 
     data = _get_json()
     
@@ -256,7 +261,7 @@ def assign_badge():
     try:
         # Pass ALL 6 arguments required by the new UserBadge.__init__
         new_badge = UserBadge(
-            user_id=user.id,
+            user_id=user_id,
             sector_id=sector_id,
             module_id=module_id,
             attempts=attempts,
