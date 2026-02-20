@@ -54,10 +54,6 @@ ALLOWED_ORIGINS = [
 ]
 
 # Apply CORS ONLY to API routes
-# Key points:
-# - restrict to /api/* so assets/pages aren’t affected
-# - include OPTIONS for preflight
-# - vary Origin to keep caches correct
 cors = CORS(
     app,
     supports_credentials=True,
@@ -69,6 +65,14 @@ cors = CORS(
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+# ✅ NEW: guarantee credentials header is present when Origin matches
+@app.after_request
+def add_cors_headers(response):
+    origin = response.headers.get("Access-Control-Allow-Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 # -------------------------
 # Admin Defaults
@@ -111,6 +115,8 @@ _env_is_production = str(os.environ.get("IS_PRODUCTION", "")).strip().lower() in
     "on",
 }
 app.config["IS_PRODUCTION"] = _env_is_production
+
+# ✅ KEEP: these are correct for cookies across domains in prod
 app.config["SESSION_COOKIE_SAMESITE"] = "None" if app.config["IS_PRODUCTION"] else "Lax"
 app.config["SESSION_COOKIE_SECURE"] = True if app.config["IS_PRODUCTION"] else False
 
