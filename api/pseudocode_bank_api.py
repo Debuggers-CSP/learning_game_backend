@@ -283,7 +283,6 @@ def grade_pseudocode(question_text: str, user_code: str):
     # Strings
     if "string" in reqs:
         if not has_any(["string", "char", "substring", "length", "letters"]):
-            # allow a pass if they clearly do string operations without those keywords
             if not re.search(r"[a-zA-Z]", code):
                 missing.append("Some STRING handling")
 
@@ -314,34 +313,60 @@ def _resolve_level(raw: str) -> str:
     return LEVEL_MAP.get(raw, raw)
 
 
+# ============================================================
+# ✅ RANDOM ENDPOINT FIX: prevent caching + reliable randomness
+# ============================================================
 @pseudocode_bank_api.route("/random", methods=["GET"])
 def random_question():
     level = _resolve_level(request.args.get("level", "1"))
     if level not in VALID_COLS:
-        return jsonify({
+        resp = jsonify({
             "success": False,
             "message": "Invalid level. Use 1-5 or super_easy/easy/medium/hard/hacker."
-        }), 400
+        })
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp, 400
 
     col = getattr(PseudocodeQuestionBank, level)
 
-    row = (
+    # Better empty filtering than col != ""
+    q = (
         PseudocodeQuestionBank.query
         .filter(col.isnot(None))
-        .filter(col != "")
-        .order_by(db.func.random())
-        .first()
+        .filter(db.func.length(col) > 0)
     )
 
-    if not row:
-        return jsonify({"success": False, "message": f"No questions available for {level}."}), 404
+    # Dialect-safe random ordering
+    dialect = (db.session.bind.dialect.name or "").lower() if db.session.bind else ""
+    if "sqlite" in dialect:
+        q = q.order_by(db.text("RANDOM()"))
+    else:
+        q = q.order_by(db.func.random())
 
-    return jsonify({
+    row = q.first()
+
+    if not row:
+        resp = jsonify({"success": False, "message": f"No questions available for {level}."})
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp, 404
+
+    resp = jsonify({
         "success": True,
         "level": level,
         "question": getattr(row, level),
         "question_id": row.id
-    }), 200
+    })
+
+    # Critical: never cache a random response
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp, 200
+
 
 @pseudocode_bank_api.route("/ai_autofill", methods=["GET"])
 def ai_autofill():
@@ -443,7 +468,6 @@ def grade_question():
                 "improved_pseudocode": ai["improved_pseudocode"]
             }), 200
         except Exception as e:
-            # Fall back to rule-based if AI fails
             print("AI grading failed, falling back:", e)
 
     # ----- Rule-based fallback -----
