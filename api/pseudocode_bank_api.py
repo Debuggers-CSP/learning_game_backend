@@ -1,20 +1,17 @@
 # api/pseudocode_bank_api.py
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from __init__ import db
 from model.pseudocode_bank import PseudocodeQuestionBank
 
 pseudocode_bank_api = Blueprint("pseudocode_bank_api", __name__, url_prefix="/api/pseudocode_bank")
 
 LEVEL_MAP = {
-    # numeric
     "1": "level1",
     "2": "level2",
     "3": "level3",
     "4": "level4",
     "5": "level5",
-
-    # named
     "super_easy": "level1",
     "super easy": "level1",
     "easy": "level2",
@@ -32,13 +29,22 @@ import re
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions").strip()
 
+
+# ----------------------------
+# Preflight (helps stop 405/blocked preflight)
+# ----------------------------
+@pseudocode_bank_api.route("/random", methods=["OPTIONS"])
+@pseudocode_bank_api.route("/ai_autofill", methods=["OPTIONS"])
+@pseudocode_bank_api.route("/grade", methods=["OPTIONS"])
+def pseudocode_preflight():
+    return make_response("", 204)
+
+
 def _deepseek_ready() -> bool:
     return bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_API_KEY_HERE")
 
+
 def _deepseek_chat(messages, temperature=0.2, max_tokens=500):
-    """
-    Calls DeepSeek chat completions. Returns raw string content.
-    """
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
@@ -59,10 +65,8 @@ def _deepseek_chat(messages, temperature=0.2, max_tokens=500):
         raise RuntimeError("Empty response from DeepSeek")
     return content.strip()
 
+
 def _extract_json_object(text: str) -> dict:
-    """
-    DeepSeek sometimes wraps JSON with extra text. This extracts the first {...} block.
-    """
     s = (text or "").strip()
     if s.startswith("```"):
         s = s.replace("```json", "").replace("```", "").strip()
@@ -73,18 +77,10 @@ def _extract_json_object(text: str) -> dict:
         raise ValueError("No JSON object found in AI output")
 
     import json as _json
-    return _json.loads(s[start:end+1])
+    return _json.loads(s[start:end + 1])
+
 
 def ai_grade_pseudocode(question_text: str, user_code: str) -> dict:
-    """
-    Returns:
-      {
-        "passed": bool,
-        "missing": [str],
-        "feedback": str,
-        "improved_pseudocode": str
-      }
-    """
     system = (
         "You are a strict but helpful AP CSP pseudocode grader.\n"
         "You must return ONLY valid JSON (no markdown, no extra text).\n"
@@ -119,7 +115,6 @@ Return JSON with exactly these keys:
 
     obj = _extract_json_object(raw)
 
-    # Defensive defaults if the model omits something
     return {
         "passed": bool(obj.get("passed", False)),
         "missing": obj.get("missing", []) if isinstance(obj.get("missing", []), list) else [],
@@ -127,11 +122,8 @@ Return JSON with exactly these keys:
         "improved_pseudocode": str(obj.get("improved_pseudocode", "")).strip()
     }
 
+
 def ai_autofill_pseudocode(question_text: str) -> str:
-    """
-    Generates a full pseudocode solution for the prompt.
-    Returns plain text pseudocode.
-    """
     system = (
         "You write AP CSP style pseudocode solutions.\n"
         "Return ONLY the pseudocode solution, no explanations, no markdown."
@@ -167,16 +159,11 @@ Return only the pseudocode.
 def _normalize(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
-def _requires(prompt: str):
-    """
-    Returns a list of requirement keys based on the prompt text.
-    Keep this small and reliable (keyword-style).
-    """
-    p = _normalize(prompt)
 
+def _requires(prompt: str):
+    p = _normalize(prompt)
     req = []
 
-    # common actions
     if "input" in p:
         req.append("input")
     if "display" in p or "output" in p or "print" in p:
@@ -188,24 +175,21 @@ def _requires(prompt: str):
     if "unknown" in p or "unexpected" in p:
         req.append("unknown")
 
-    # conditionals / loops / functions
     if "if" in p or "otherwise" in p or "else" in p or "decision" in p:
         req.append("if")
     if "loop" in p or "for " in p or "from" in p or "times" in p or "1 to" in p or "1..":
         req.append("loop")
-    if "write " in p or "returns" in p or "return" in p or "(" in p and ")" in p and "write" in p:
+    if ("write " in p) or ("returns" in p) or ("return" in p) or ("(" in p and ")" in p and "write" in p):
         req.append("function")
     if "return" in p or "returns" in p:
         req.append("return")
 
-    # list/string specific hints
     if "list" in p:
         req.append("list")
     if "string" in p:
         req.append("string")
 
-    # special literals in your question bank that are easy to check
-    if '"even"' in p or " even " in p and '"odd"' in p or " odd " in p:
+    if '"even"' in p or (" even " in p and ("odd" in p or '"odd"' in p)):
         req.append("even_odd_words")
     if '"hot"' in p:
         req.append("hot_word")
@@ -214,11 +198,8 @@ def _requires(prompt: str):
 
     return req
 
+
 def grade_pseudocode(question_text: str, user_code: str):
-    """
-    Very lightweight rule-based checker.
-    It checks for required constructs, not perfect logic.
-    """
     q = question_text or ""
     code = user_code or ""
     norm = _normalize(code)
@@ -229,79 +210,52 @@ def grade_pseudocode(question_text: str, user_code: str):
     def has_any(tokens):
         return any(t in norm for t in tokens)
 
-    # Input
-    if "input" in reqs:
-        if not has_any(["input", "read", "get ", "scan", "ask "]):
-            missing.append("An INPUT step (e.g., INPUT x)")
+    if "input" in reqs and not has_any(["input", "read", "get ", "scan", "ask "]):
+        missing.append("An INPUT step (e.g., INPUT x)")
 
-    # Output
-    if "output" in reqs:
-        if not has_any(["display", "print", "output", "show "]):
-            missing.append("Output the final result")
+    if "output" in reqs and not has_any(["display", "print", "output", "show "]):
+        missing.append("Output the final result")
 
-    # Actions list
-    if "actions" in reqs:
-        if not has_any(["action", "actions", "event", "step"]):
-            missing.append("Process each action in order")
+    if "actions" in reqs and not has_any(["action", "actions", "event", "step"]):
+        missing.append("Process each action in order")
 
-    # Result variable
-    if "result" in reqs:
-        if not has_any(["result", "score", "state", "status", "outcome", "count", "total"]):
-            missing.append("Define and update a result")
+    if "result" in reqs and not has_any(["result", "score", "state", "status", "outcome", "count", "total"]):
+        missing.append("Define and update a result")
 
-    # If/Else
-    if "if" in reqs:
-        if not has_any(["if", "else", "otherwise", "case", "switch"]):
-            missing.append("Use if/else decisions for actions")
+    if "if" in reqs and not has_any(["if", "else", "otherwise", "case", "switch"]):
+        missing.append("Use if/else decisions for actions")
 
-    # Loop
-    if "loop" in reqs:
-        if not has_any(["for", "while", "repeat", "loop", "each"]):
-            missing.append("Loop once per action")
+    if "loop" in reqs and not has_any(["for", "while", "repeat", "loop", "each"]):
+        missing.append("Loop once per action")
 
-    # Unknown action handling
-    if "unknown" in reqs:
-        if not has_any(["unknown", "default", "otherwise", "else"]):
-            missing.append("Handle unknown actions safely")
+    if "unknown" in reqs and not has_any(["unknown", "default", "otherwise", "else"]):
+        missing.append("Handle unknown actions safely")
 
-    # Function
-    if "function" in reqs:
-        if not has_any(["function", "procedure", "define", "def "]):
-            missing.append("A FUNCTION/PROCEDURE definition")
+    if "function" in reqs and not has_any(["function", "procedure", "define", "def "]):
+        missing.append("A FUNCTION/PROCEDURE definition")
 
-    # Return
-    if "return" in reqs:
-        if "return" not in norm:
-            missing.append("A RETURN statement")
+    if "return" in reqs and "return" not in norm:
+        missing.append("A RETURN statement")
 
-    # Lists
-    if "list" in reqs:
-        if not has_any(["list", "[", "]", "append", "add", "remove"]):
-            missing.append("Some LIST handling (list creation/access/append/remove)")
+    if "list" in reqs and not has_any(["list", "[", "]", "append", "add", "remove"]):
+        missing.append("Some LIST handling (list creation/access/append/remove)")
 
-    # Strings
     if "string" in reqs:
         if not has_any(["string", "char", "substring", "length", "letters"]):
             if not re.search(r"[a-zA-Z]", code):
                 missing.append("Some STRING handling")
 
-    # Special literal checks
-    if "even_odd_words" in reqs:
-        if not (("even" in norm) and ("odd" in norm)):
-            missing.append('Both output words "EVEN" and "ODD"')
+    if "even_odd_words" in reqs and not (("even" in norm) and ("odd" in norm)):
+        missing.append('Both output words "EVEN" and "ODD"')
 
-    if "hot_word" in reqs:
-        if "hot" not in norm:
-            missing.append('Output word "Hot"')
+    if "hot_word" in reqs and "hot" not in norm:
+        missing.append('Output word "Hot"')
 
-    if "apcsp_word" in reqs:
-        if "apcsp" not in norm:
-            missing.append('Use the literal "APCSP" in the comparison/output')
-
-    passed = (len(missing) == 0)
+    if "apcsp_word" in reqs and "apcsp" not in norm:
+        missing.append('Use the literal "APCSP" in the comparison/output')
 
     return {
-        "passed": passed,
+        "passed": len(missing) == 0,
         "missing": missing,
         "notes": "This checker validates required structures/keywords for the prompt."
     }
@@ -313,7 +267,6 @@ def _resolve_level(raw: str) -> str:
 
 
 def _no_cache(resp):
-    # Strong anti-cache headers for “random” endpoints
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
@@ -321,9 +274,6 @@ def _no_cache(resp):
     return resp
 
 
-# ============================================================
-# ✅ RANDOM ENDPOINT: prevent caching + allow exclude_id
-# ============================================================
 @pseudocode_bank_api.route("/random", methods=["GET"])
 def random_question():
     level = _resolve_level(request.args.get("level", "1"))
@@ -355,7 +305,6 @@ def random_question():
 
     row = q.first()
 
-    # If excluding last id made it empty, fall back to allow repeats
     if not row and exclude_id:
         q2 = (
             PseudocodeQuestionBank.query
@@ -381,17 +330,8 @@ def random_question():
     return _no_cache(resp), 200
 
 
-# ============================================================
-# ✅ AI AUTOFILL: accept BOTH POST(JSON) and GET(query params)
-# (Your frontend calls POST with JSON)
-# ============================================================
 @pseudocode_bank_api.route("/ai_autofill", methods=["GET", "POST"])
 def ai_autofill():
-    """
-    GET  /api/pseudocode_bank/ai_autofill?question_id=123&level=level3
-    POST /api/pseudocode_bank/ai_autofill  JSON: { "question_id":123, "level":"level3" }
-    Returns: { success, answer, question_id, level }
-    """
     if not _deepseek_ready():
         return jsonify({
             "success": False,
@@ -422,11 +362,11 @@ def ai_autofill():
     if level and hasattr(row, level):
         question_text = getattr(row, level)
     else:
-        for col in ["level1", "level2", "level3", "level4", "level5"]:
-            val = getattr(row, col, None)
+        for colname in ["level1", "level2", "level3", "level4", "level5"]:
+            val = getattr(row, colname, None)
             if val:
                 question_text = val
-                level = col
+                level = colname
                 break
 
     if not question_text:
@@ -452,7 +392,6 @@ def grade_question():
     user_code = data.get("pseudocode", "")
     level = data.get("level", None)
 
-    # front end can request AI grading
     use_ai = bool(data.get("use_ai", True))
 
     if qid is None:
@@ -466,17 +405,16 @@ def grade_question():
     if level and hasattr(row, level):
         question_text = getattr(row, level)
     else:
-        for col in ["level1", "level2", "level3", "level4", "level5"]:
-            val = getattr(row, col, None)
+        for colname in ["level1", "level2", "level3", "level4", "level5"]:
+            val = getattr(row, colname, None)
             if val:
                 question_text = val
-                level = col
+                level = colname
                 break
 
     if not question_text:
         return jsonify({"success": False, "message": "Question text not found"}), 404
 
-    # ----- AI grading path -----
     if use_ai and _deepseek_ready():
         try:
             ai = ai_grade_pseudocode(question_text, user_code)
@@ -493,7 +431,6 @@ def grade_question():
         except Exception as e:
             print("AI grading failed, falling back:", e)
 
-    # ----- Rule-based fallback -----
     result = grade_pseudocode(question_text, user_code)
 
     return jsonify({
