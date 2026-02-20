@@ -1,77 +1,69 @@
-from flask import request
-from flask import current_app, g
+from flask import request, current_app, g
 from functools import wraps
 import jwt
 from model.user import User
+from model.robop_user import RobopUser
+
+def _looks_like_jwt(token: str) -> bool:
+    return isinstance(token, str) and token.count(".") == 2
+
+def _get_jwt_from_request():
+    # 1) Authorization header
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        tok = auth.split(" ", 1)[1].strip()
+        if _looks_like_jwt(tok):
+            return tok, "bearer"
+
+    # 2) ✅ Prefer Robop cookie FIRST
+    robop_tok = request.cookies.get("ROBOP_JWT")
+    if _looks_like_jwt(robop_tok):
+        return robop_tok, "robop_cookie"
+
+    # 3) Main cookie (only if it looks like a JWT)
+    token_cookie_name = current_app.config.get("JWT_TOKEN_NAME", "jwt")
+    tok = request.cookies.get(token_cookie_name)
+    if _looks_like_jwt(tok):
+        return tok, "main_cookie"
+
+    return None, None
+
 
 def token_required(roles=None):
-    '''
-    This function is used to guard API endpoints that require authentication.
-    Here is how it works:
-      1. checks for the presence of a valid JWT token in the request cookie
-      2. decodes the token and retrieves the user data
-      3. checks if the user data is found in the database
-      4. checks if the user has the required role
-      5. set the current_user in the global context (Flask's g object)
-      6. returns the decorated function if all checks pass
-    Here are some possible error responses:    
-      A. 401 / Unauthorized: token is missing or invalid
-      B. 403 / Forbidden: user has insufficient permissions
-      C. 500 / Internal Server Error: something went wrong with the token decoding
-    '''
     def decorator(func_to_guard):
         @wraps(func_to_guard)
         def decorated(*args, **kwargs):
-            # If this is a CORS preflight request, return 200 OK immediately
-            if request.method == 'OPTIONS':
-                return ('', 200)
-            token = request.cookies.get(current_app.config["JWT_TOKEN_NAME"])
+            if request.method == "OPTIONS":
+                return ("", 200)
+
+            token, source = _get_jwt_from_request()
             if not token:
-                return {
-                    "message": "Authentication Token is missing!",
-                    "data": None,
-                    "error": "Unauthorized"
-                }, 401
+                return {"message": "Authentication Token is missing!", "data": None, "error": "Unauthorized"}, 401
+
             try:
-                # Decode the token and retrieve the user data
                 data = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
-                current_user = User.query.filter_by(_uid=data["_uid"]).first()
+
+                if source == "robop_cookie":
+                    uid = data.get("uid")
+                    if not uid:
+                        return {"message": "Invalid Authentication token!", "data": None, "error": "Unauthorized"}, 401
+                    current_user = RobopUser.query.filter_by(_uid=uid).first()
+                else:
+                    uid = data.get("_uid")
+                    if not uid:
+                        return {"message": "Invalid Authentication token!", "data": None, "error": "Unauthorized"}, 401
+                    current_user = User.query.filter_by(_uid=uid).first()
+
                 if current_user is None:
-                    return {
-                        "message": "Invalid Authentication token!",
-                        "data": None,
-                        "error": "Unauthorized"
-                    }, 401
-                    
-                # Check user has the required role, when role is required 
-                if roles and current_user.role not in roles:
-                    return {
-                        "message": "Insufficient permissions. Required roles: {}".format(roles),
-                        "data": None,
-                        "error": "Forbidden"
-                    }, 403
-                    
-                # Success finding user and (optional) role
-                # Set the current_user in the global context
-                # Flask's g object is a global object that lasts for the duration of the request
-                # The g.current_user can be referenced in decorated function 
+                    return {"message": "Invalid Authentication token!", "data": None, "error": "Unauthorized"}, 401
+
                 g.current_user = current_user
-            
-            # Error exception is for unknown jwt.decode errors 
+                return func_to_guard(*args, **kwargs)
+
+            except jwt.ExpiredSignatureError:
+                return {"message": "Token has expired!", "data": None, "error": "Unauthorized"}, 401
             except Exception as e:
-                return {
-                    "message": "Something went wrong decoding the token!",
-                    "data": None,
-                    "error": str(e)
-                }, 500
-
-            
-
-            # Success, return to the decorated function
-            # func_to_guard is the function with the @token_required
-            # func_to_guard returns with the original function arguments
-            return func_to_guard(*args, **kwargs)
+                return {"message": "Invalid Authentication token!", "data": None, "error": str(e)}, 401
 
         return decorated
-
     return decorator

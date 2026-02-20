@@ -364,6 +364,7 @@ class UserAPI:
                         # Create JSON response
                         response_data = {
                             "message": f"Authentication for {user._uid} successful",
+                            "token": token,
                             "user": {
                                 "uid": user._uid,
                                 "name": user.name,
