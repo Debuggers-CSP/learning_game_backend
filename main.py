@@ -15,10 +15,14 @@ from werkzeug.security import generate_password_hash
 from dotenv import load_dotenv
 from api.jwt_authorize import token_required
 
+# ✅ CORS
+from flask_cors import CORS
+
 # import "objects" from "this" project
-from __init__ import app, db, login_manager  # Key Flask objects 
+from __init__ import app, db, login_manager  # Key Flask objects
+
 # API endpoints
-from api.user import user_api 
+from api.user import user_api
 from api.python_exec_api import python_exec_api
 from api.javascript_exec_api import javascript_exec_api
 from api.section import section_api
@@ -33,14 +37,14 @@ from api.classroom_api import classroom_api
 from api.data_export_import_api import data_export_import_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from api.post import post_api  # Import the social media post API
-#from api.announcement import announcement_api ##temporary revert
+# from api.announcement import announcement_api ##temporary revert
 from api.pseudocode_bank_api import pseudocode_bank_api
 from model.pseudocode_bank import initPseudocodeQuestionBank
 from api.character_api import character_api
 
 # database Initialization functions
 from model.user import User, initUsers
-from model.user import Section;
+from model.user import Section
 from model.github import GitHubUser
 from model.feedback import Feedback
 from api.analytics import get_date_range
@@ -52,18 +56,13 @@ from model.classroom import Classroom
 from model.persona import Persona, initPersonas, initPersonaUsers
 from model.post import Post, init_posts
 from model.microblog import MicroBlog, Topic, initMicroblogs
-from hacks.jokes import initJokes 
+from hacks.jokes import initJokes
 from api.robop_api import robop_api
 from model.robop_user import RobopUser, UserBadge, initRobopUsers
 from api.endgame_api import endgame_api
 from api.debug_challenge_api import debug_challenge_api
 from model.endgame import init_endgame_data
 from model.debug_challenge import init_debug_challenge_data
-
-
-# from model.announcement import Announcement ##temporary revert
-
-# server only Views
 
 # Load environment variables
 load_dotenv()
@@ -72,7 +71,25 @@ app.config['KASM_SERVER'] = os.getenv('KASM_SERVER')
 app.config['KASM_API_KEY'] = os.getenv('KASM_API_KEY')
 app.config['KASM_API_KEY_SECRET'] = os.getenv('KASM_API_KEY_SECRET')
 
+# =========================================================
+# ✅ CORS SETUP (fixes “Failed to fetch / Network/CORS error”)
+# - Update FRONTEND_ORIGIN to match your `make` dev server origin.
+# - You can also set FRONTEND_ORIGINS="http://localhost:4100,http://127.0.0.1:4100"
+# =========================================================
+origins_env = os.getenv("FRONTEND_ORIGINS", "").strip()
+if origins_env:
+    allowed_origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+else:
+    # default guess: change 4100 to whatever your frontend uses
+    allowed_origins = ["http://localhost:4100", "http://127.0.0.1:4100"]
 
+CORS(
+    app,
+    resources={r"/*": {"origins": allowed_origins}},
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
 
 # register URIs for api endpoints
 app.register_blueprint(python_exec_api)
@@ -80,7 +97,7 @@ app.register_blueprint(javascript_exec_api)
 app.register_blueprint(user_api)
 app.register_blueprint(section_api)
 app.register_blueprint(persona_api)
-app.register_blueprint(pfp_api) 
+app.register_blueprint(pfp_api)
 app.register_blueprint(groq_api)
 app.register_blueprint(chatgpt_api)
 app.register_blueprint(microblog_api)
@@ -108,6 +125,7 @@ with app.app_context():
     init_endgame_data()
     initPseudocodeQuestionBank()
     init_debug_challenge_data()
+
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
@@ -148,7 +166,7 @@ def login():
 @app.route('/studytracker')  # route for the study tracker page
 def studytracker():
     return render_template("studytracker.html")
-    
+
 @app.route('/logout')
 def logout():
     logout_user()
@@ -156,14 +174,12 @@ def logout():
 
 @app.errorhandler(404)  # catch for URL not found
 def page_not_found(e):
-    # note that we set the 404 status explicitly
     return render_template('404.html'), 404
 
 @app.route('/')  # connects default URL to index() function
 def index():
     print("Home:", current_user)
     return render_template("index.html")
-
 
 @app.route('/ending/<int:player_id>')
 def ending_page(player_id):
@@ -172,25 +188,19 @@ def ending_page(player_id):
         api_base = request.host_url.rstrip("/")
     return render_template("ending.html", player_id=player_id, api_base=api_base)
 
-
 @app.route('/debug-challenge')
 def debug_challenge_page():
     return render_template("debug_challenge.html")
-
 
 @app.route('/debug')
 def debug_challenge_alias():
     return render_template("debug_challenge.html")
 
-
 # Handle socket.io requests to prevent errors
-# Socket.io server is not configured, but we prevent 404 errors
 @app.route('/socket.io/', defaults={'path': ''}, methods=['GET', 'POST', 'OPTIONS'])
 @app.route('/socket.io/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
 def socket_io_stub(path=''):
-    # Just return empty OK response - socket.io not configured
     return '', 200
-
 
 @app.route('/users/table2')
 @login_required
@@ -212,11 +222,9 @@ def persona():
 
 @app.route("/robop/api/users", methods=["GET"])
 def get_robop_users_api():
-    """API to get all Robop users data"""
     try:
         users = RobopUser.query.order_by(RobopUser.id.asc()).all()
         users_data = []
-        
         for u in users:
             users_data.append({
                 "id": u.id,
@@ -229,22 +237,19 @@ def get_robop_users_api():
                 "created": u._created.isoformat() if hasattr(u, "_created") and u._created else None,
                 "last_login": u._last_login.isoformat() if hasattr(u, "_last_login") and u._last_login else None,
             })
-            
         return jsonify({"success": True, "data": users_data})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/robop/api/users/<int:user_id>", methods=["PUT"])
 def update_robop_user(user_id):
-    """API to update Robop user information"""
     try:
         user = RobopUser.query.get(user_id)
         if not user:
             return jsonify({"success": False, "error": "User not found"}), 404
-        
-        data = request.get_json()
-        
-        # Update fields if provided
+
+        data = request.get_json() or {}
+
         if 'uid' in data:
             user.uid = data['uid']
         if 'first_name' in data:
@@ -257,7 +262,7 @@ def update_robop_user(user_id):
             user.role = data['role']
         if 'status' in data:
             user.status = data['status']
-        
+
         db.session.commit()
         return jsonify({"success": True, "message": "User updated successfully"})
     except Exception as e:
@@ -266,15 +271,13 @@ def update_robop_user(user_id):
 
 @app.route("/robop/api/users/<int:user_id>", methods=["DELETE"])
 def delete_robop_user(user_id):
-    """API to delete a Robop user"""
     try:
         user = RobopUser.query.get(user_id)
         if not user:
             return jsonify({"success": False, "error": "User not found"}), 404
-        
+
         db.session.delete(user)
         db.session.commit()
-        
         return jsonify({"success": True, "message": "User deleted successfully"})
     except Exception as e:
         db.session.rollback()
@@ -282,22 +285,18 @@ def delete_robop_user(user_id):
 
 @app.route("/robop/api/users", methods=["POST"])
 def add_robop_user():
-    """API to add a new Robop user"""
     try:
-        data = request.get_json()
-        
-        # Check required fields
+        data = request.get_json() or {}
+
         required_fields = ["uid", "first_name", "last_name"]
         for field in required_fields:
             if field not in data or not data[field]:
                 return jsonify({"success": False, "error": f"{field} is required"}), 400
-        
-        # Check if user already exists
+
         existing_user = RobopUser.query.filter_by(uid=data["uid"]).first()
         if existing_user:
             return jsonify({"success": False, "error": "User ID already exists"}), 400
-        
-        # Create new user
+
         new_user = RobopUser(
             uid=data["uid"],
             first_name=data["first_name"],
@@ -306,26 +305,25 @@ def add_robop_user():
             role=data.get("role", "user"),
             status=data.get("status", "active")
         )
-        
+
         db.session.add(new_user)
         db.session.commit()
-        
+
         return jsonify({
-            "success": True, 
+            "success": True,
             "message": "User added successfully",
             "user_id": new_user.id
         }), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 400
-    
+
 @app.route("/robop/users")
 def robop_users():
     users = RobopUser.query.order_by(RobopUser.id.asc()).all()
 
     robop_user_data = []
     for u in users:
-        # pull all badges for this user once
         badges = (
             UserBadge.query
             .filter_by(user_id=u.id)
@@ -335,7 +333,6 @@ def robop_users():
 
         badge_count = len(badges)
 
-        # "best" badge = highest score (tie-breaker: most recently earned)
         best_badge = None
         if badges:
             best_badge = sorted(
@@ -344,7 +341,6 @@ def robop_users():
                 reverse=True
             )[0]
 
-        # last earned badge (most recent by date)
         last_earned = badges[0] if badges else None
 
         robop_user_data.append({
@@ -354,8 +350,6 @@ def robop_users():
             "last_name": u.last_name,
             "created": u._created.isoformat() if getattr(u, "_created", None) else None,
             "last_login": u._last_login.isoformat() if getattr(u, "_last_login", None) else None,
-
-            # NEW badge fields
             "badge_count": badge_count,
             "best_badge": best_badge._badge_name if best_badge else None,
             "best_score": best_badge._score if best_badge else None,
@@ -366,12 +360,10 @@ def robop_users():
 
     return render_template("robop_users.html", robop_user_data=robop_user_data)
 
-
-# Helper function to extract uploads for a user (ie PFP image)
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     return send_from_directory(current_app.config['UPLOAD_FOLDER'], filename)
- 
+
 @app.route('/users/delete/<int:user_id>', methods=['DELETE'])
 @login_required
 def delete_user(user_id):
@@ -386,80 +378,52 @@ def delete_user(user_id):
 def reset_password(user_id):
     if current_user.role != 'Admin':
         return jsonify({'error': 'Unauthorized'}), 403
-    
+
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    # Set the new password
     if user.update({"password": app.config['DEFAULT_PASSWORD']}):
         return jsonify({'message': 'Password reset successfully'}), 200
     return jsonify({'error': 'Password reset failed'}), 500
 
 @app.route('/kasm_users')
 def kasm_users():
-    # Fetch configuration details from environment or app config
     SERVER = current_app.config.get('KASM_SERVER')
     API_KEY = current_app.config.get('KASM_API_KEY')
     API_KEY_SECRET = current_app.config.get('KASM_API_KEY_SECRET')
 
-    # Validate required configurations
     if not SERVER or not API_KEY or not API_KEY_SECRET:
         return render_template('error.html', message='KASM keys are missing'), 400
 
     try:
-        # Prepare API request details
         url = f"{SERVER}/api/public/get_users"
-        data = {
-            "api_key": API_KEY,
-            "api_key_secret": API_KEY_SECRET
-        }
+        data = {"api_key": API_KEY, "api_key_secret": API_KEY_SECRET}
+        response = requests.post(url, json=data, timeout=10)
 
-        # Perform the POST request
-        response = requests.post(url, json=data, timeout=10)  # Added timeout for reliability
-
-        # Validate the API response
         if response.status_code != 200:
-            return render_template(
-                'error.html', 
-                message='Failed to get users', 
-                code=response.status_code
-            ), response.status_code
+            return render_template('error.html', message='Failed to get users', code=response.status_code), response.status_code
 
-        # Parse the users list from the response
         users = response.json().get('users', [])
 
-        # Process `last_session` and handle potential parsing issues
         for user in users:
             last_session = user.get('last_session')
             try:
                 user['last_session'] = datetime.fromisoformat(last_session) if last_session else None
             except ValueError:
-                user['last_session'] = None  # Fallback for invalid date formats
+                user['last_session'] = None
 
-        # Sort users by `last_session`, treating `None` as the oldest date
-        sorted_users = sorted(
-            users, 
-            key=lambda x: x['last_session'] or datetime.min, 
-            reverse=True
-        )
-
-        # Render the sorted users in the template
+        sorted_users = sorted(users, key=lambda x: x['last_session'] or datetime.min, reverse=True)
         return render_template('kasm_users.html', users=sorted_users)
 
     except requests.RequestException as e:
-        # Handle connection errors or other request exceptions
-        return render_template(
-            'error.html', 
-            message=f"Error connecting to KASM API: {str(e)}"
-        ), 500
-        
-        
+        return render_template('error.html', message=f"Error connecting to KASM API: {str(e)}"), 500
+
 @app.route('/delete_user/<user_id>', methods=['DELETE'])
 def delete_user_kasm(user_id):
     if current_user.role != 'Admin':
         return jsonify({'error': 'Unauthorized'}), 403
-    
+
     SERVER = current_app.config.get('KASM_SERVER')
     API_KEY = current_app.config.get('KASM_API_KEY')
     API_KEY_SECRET = current_app.config.get('KASM_API_KEY_SECRET')
@@ -468,7 +432,6 @@ def delete_user_kasm(user_id):
         return {'message': 'KASM keys are missing'}, 400
 
     try:
-        # Kasm API to delete a user
         url = f"{SERVER}/api/public/delete_user"
         data = {
             "api_key": API_KEY,
@@ -490,78 +453,65 @@ def delete_user_kasm(user_id):
 
 @app.route("/robop/api/users/<int:user_id>/update_badge", methods=["PUT"])
 def update_user_badge_info(user_id):
-    """API to update user's badge information (direct update of best/last badges)"""
     try:
         user = RobopUser.query.get(user_id)
         if not user:
             return jsonify({"success": False, "error": "User not found"}), 404
-        
-        data = request.get_json()
+
+        data = request.get_json() or {}
         print(f"Updating badge info for user {user_id}: {data}")
-        
+
         badges = UserBadge.query.filter_by(user_id=user_id).order_by(UserBadge._date_earned.desc()).all()
-        
+
         if not badges:
             return jsonify({"success": False, "error": "No badges found for this user"}), 404
-        
+
         if 'best_badge' in data or 'best_score' in data or 'best_sector' in data:
             best_badge = sorted(
                 badges,
                 key=lambda b: (b._score, b._date_earned),
                 reverse=True
             )[0]
-            
+
             if 'best_badge' in data:
                 best_badge._badge_name = data['best_badge']
             if 'best_score' in data:
                 best_badge._score = int(data['best_score'])
             if 'best_sector' in data:
                 best_badge._sector_id = int(data['best_sector'])
-        
+
         if 'last_badge' in data:
-            last_badge = badges[0]  # 已经按时间倒序排列
+            last_badge = badges[0]
             last_badge._badge_name = data['last_badge']
-        
+
         db.session.commit()
         return jsonify({"success": True, "message": "Badge information updated successfully"})
-        
+
     except Exception as e:
         db.session.rollback()
         print(f"ERROR updating badge info: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 400
 
-
 @app.route('/update_user/<string:uid>', methods=['PUT'])
 def update_user(uid):
-    # Authorization check
     if current_user.role != 'Admin':
         return jsonify({'error': 'Unauthorized'}), 403
 
-    # Get the JSON data from the request
-    data = request.get_json()
-    print(f"Request Data: {data}")  # Log the incoming data
+    data = request.get_json() or {}
+    print(f"Request Data: {data}")
 
-    # Find the user in the database
     user = User.query.filter_by(_uid=uid).first()
     if user:
-        print(f"Found user: {user.uid}")  # Log the found user's UID
-        
-        # Update the user using the provided data
-        user.update(data)  # Assuming `user.update(data)` is a method on your User model
-        
-        # Save changes to the database
+        print(f"Found user: {user.uid}")
+        user.update(data)
         return jsonify({"message": "User updated successfully."}), 200
     else:
-        print("User not found.")  # Log when user is not found
+        print("User not found.")
         return jsonify({"message": "User not found."}), 404
 
-
-
-    
 # Create an AppGroup for custom commands
 custom_cli = AppGroup('custom', help='Custom commands')
 
-# Define a command to run the data generation functions
 @custom_cli.command('generate_data')
 def generate_data():
     initUsers()
@@ -569,39 +519,19 @@ def generate_data():
     initPersonas()
     initPersonaUsers()
 
-# Register the custom command group with the Flask application
 app.cli.add_command(custom_cli)
-        
-# this runs the flask application on the development server
-def _find_available_port(host: str, preferred: int, max_tries: int = 50) -> int:
-    """Return an available port starting at `preferred` (on `host`)."""
-    port = preferred
-    for _ in range(max_tries):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                s.bind((host, port))
-                return port
-            except OSError:
-                port += 1
-                continue
-    raise OSError(f"No available ports found starting at {preferred}")
 
-
+# =========================================================
+# ✅ Run server on a stable port (prevents frontend calling 8320
+# while backend silently moved to 8321+)
+# =========================================================
 if __name__ == "__main__":
     host = "0.0.0.0"
     try:
-        base_port = int(os.environ.get('FLASK_PORT') or app.config.get('FLASK_PORT', 8320))
+        port = int(os.environ.get("FLASK_PORT", 8320))
     except Exception:
-        base_port = 8320
+        port = 8320
 
-    try:
-        chosen_port = _find_available_port(host, base_port)
-    except OSError as e:
-        print(f"Failed to find available port: {e}")
-        raise
-
-    print(f"** Server running: http://localhost:{chosen_port}")
-    # Honor `FLASK_DEBUG` env if set; otherwise keep debug True for dev
-    debug_mode = os.environ.get('FLASK_DEBUG') is not None or app.debug
-    app.run(debug=debug_mode, host=host, port=chosen_port, use_reloader=False)
+    print(f"** Server running: http://localhost:{port}")
+    debug_mode = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes", "on")
+    app.run(debug=debug_mode, host=host, port=port, use_reloader=False)
