@@ -158,7 +158,6 @@ Return only the pseudocode.
         max_tokens=500
     )
 
-    # If it wrapped in ``` remove it
     out = raw.strip()
     if out.startswith("```"):
         out = out.replace("```", "").replace("json", "").strip()
@@ -313,32 +312,41 @@ def _resolve_level(raw: str) -> str:
     return LEVEL_MAP.get(raw, raw)
 
 
+def _no_cache(resp):
+    # Strong anti-cache headers for “random” endpoints
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    resp.headers["Vary"] = "Origin"
+    return resp
+
+
 # ============================================================
-# ✅ RANDOM ENDPOINT FIX: prevent caching + reliable randomness
+# ✅ RANDOM ENDPOINT: prevent caching + allow exclude_id
 # ============================================================
 @pseudocode_bank_api.route("/random", methods=["GET"])
 def random_question():
     level = _resolve_level(request.args.get("level", "1"))
+    exclude_id = request.args.get("exclude_id", type=int)
+
     if level not in VALID_COLS:
         resp = jsonify({
             "success": False,
             "message": "Invalid level. Use 1-5 or super_easy/easy/medium/hard/hacker."
         })
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-        return resp, 400
+        return _no_cache(resp), 400
 
     col = getattr(PseudocodeQuestionBank, level)
 
-    # Better empty filtering than col != ""
     q = (
         PseudocodeQuestionBank.query
         .filter(col.isnot(None))
         .filter(db.func.length(col) > 0)
     )
 
-    # Dialect-safe random ordering
+    if exclude_id:
+        q = q.filter(PseudocodeQuestionBank.id != exclude_id)
+
     dialect = (db.session.bind.dialect.name or "").lower() if db.session.bind else ""
     if "sqlite" in dialect:
         q = q.order_by(db.text("RANDOM()"))
@@ -347,12 +355,22 @@ def random_question():
 
     row = q.first()
 
+    # If excluding last id made it empty, fall back to allow repeats
+    if not row and exclude_id:
+        q2 = (
+            PseudocodeQuestionBank.query
+            .filter(col.isnot(None))
+            .filter(db.func.length(col) > 0)
+        )
+        if "sqlite" in dialect:
+            q2 = q2.order_by(db.text("RANDOM()"))
+        else:
+            q2 = q2.order_by(db.func.random())
+        row = q2.first()
+
     if not row:
         resp = jsonify({"success": False, "message": f"No questions available for {level}."})
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-        return resp, 404
+        return _no_cache(resp), 404
 
     resp = jsonify({
         "success": True,
@@ -360,26 +378,19 @@ def random_question():
         "question": getattr(row, level),
         "question_id": row.id
     })
-
-    # Critical: never cache a random response
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
-    return resp, 200
+    return _no_cache(resp), 200
 
 
 # ============================================================
-# ✅ FIXED: AI AUTOFILL supports POST (what your frontend sends)
+# ✅ AI AUTOFILL: accept BOTH POST(JSON) and GET(query params)
+# (Your frontend calls POST with JSON)
 # ============================================================
 @pseudocode_bank_api.route("/ai_autofill", methods=["GET", "POST"])
 def ai_autofill():
     """
-    Supports BOTH:
-    - GET  /api/pseudocode_bank/ai_autofill?question_id=123&level=level3
-    - POST /api/pseudocode_bank/ai_autofill  { "question_id": 123, "level": "level3" }
-
-    Returns:
-      { success, answer, question_id, level }
+    GET  /api/pseudocode_bank/ai_autofill?question_id=123&level=level3
+    POST /api/pseudocode_bank/ai_autofill  JSON: { "question_id":123, "level":"level3" }
+    Returns: { success, answer, question_id, level }
     """
     if not _deepseek_ready():
         return jsonify({
@@ -387,11 +398,10 @@ def ai_autofill():
             "message": "DeepSeek API key not configured on server."
         }), 500
 
-    # Read from POST JSON or GET params
     if request.method == "POST":
-        payload = request.get_json(silent=True) or {}
-        qid = payload.get("question_id", None)
-        level = payload.get("level", None)
+        data = request.get_json(silent=True) or {}
+        qid = data.get("question_id", None)
+        level = data.get("level", None)
     else:
         qid = request.args.get("question_id", None)
         level = request.args.get("level", None)
@@ -404,20 +414,10 @@ def ai_autofill():
     except Exception:
         return jsonify({"success": False, "message": "question_id must be an integer"}), 400
 
-    # Normalize level if provided (accept "1".."5" or named)
-    if level is not None:
-        level = _resolve_level(str(level))
-        if level and level not in VALID_COLS:
-            return jsonify({
-                "success": False,
-                "message": "Invalid level. Use 1-5 or super_easy/easy/medium/hard/hacker."
-            }), 400
-
     row = PseudocodeQuestionBank.query.get(qid_int)
     if not row:
         return jsonify({"success": False, "message": "Question not found"}), 404
 
-    # Choose question text
     question_text = None
     if level and hasattr(row, level):
         question_text = getattr(row, level)
@@ -452,7 +452,7 @@ def grade_question():
     user_code = data.get("pseudocode", "")
     level = data.get("level", None)
 
-    # NEW: front end can request AI grading
+    # front end can request AI grading
     use_ai = bool(data.get("use_ai", True))
 
     if qid is None:
