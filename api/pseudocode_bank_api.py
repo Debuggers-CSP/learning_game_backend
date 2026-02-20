@@ -368,11 +368,18 @@ def random_question():
     return resp, 200
 
 
-@pseudocode_bank_api.route("/ai_autofill", methods=["GET"])
+# ============================================================
+# ✅ FIXED: AI AUTOFILL supports POST (what your frontend sends)
+# ============================================================
+@pseudocode_bank_api.route("/ai_autofill", methods=["GET", "POST"])
 def ai_autofill():
     """
-    GET /api/pseudocode_bank/ai_autofill?question_id=123&level=level3
-    Returns: { success, answer }
+    Supports BOTH:
+    - GET  /api/pseudocode_bank/ai_autofill?question_id=123&level=level3
+    - POST /api/pseudocode_bank/ai_autofill  { "question_id": 123, "level": "level3" }
+
+    Returns:
+      { success, answer, question_id, level }
     """
     if not _deepseek_ready():
         return jsonify({
@@ -380,8 +387,14 @@ def ai_autofill():
             "message": "DeepSeek API key not configured on server."
         }), 500
 
-    qid = request.args.get("question_id", None)
-    level = request.args.get("level", None)
+    # Read from POST JSON or GET params
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        qid = payload.get("question_id", None)
+        level = payload.get("level", None)
+    else:
+        qid = request.args.get("question_id", None)
+        level = request.args.get("level", None)
 
     if qid is None:
         return jsonify({"success": False, "message": "Missing question_id"}), 400
@@ -391,10 +404,20 @@ def ai_autofill():
     except Exception:
         return jsonify({"success": False, "message": "question_id must be an integer"}), 400
 
+    # Normalize level if provided (accept "1".."5" or named)
+    if level is not None:
+        level = _resolve_level(str(level))
+        if level and level not in VALID_COLS:
+            return jsonify({
+                "success": False,
+                "message": "Invalid level. Use 1-5 or super_easy/easy/medium/hard/hacker."
+            }), 400
+
     row = PseudocodeQuestionBank.query.get(qid_int)
     if not row:
         return jsonify({"success": False, "message": "Question not found"}), 404
 
+    # Choose question text
     question_text = None
     if level and hasattr(row, level):
         question_text = getattr(row, level)
