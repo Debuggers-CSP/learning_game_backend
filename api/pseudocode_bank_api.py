@@ -1,8 +1,11 @@
 # api/pseudocode_bank_api.py
-
 from flask import Blueprint, request, jsonify, make_response
 from __init__ import db
 from model.pseudocode_bank import PseudocodeQuestionBank
+
+import os
+import requests
+import re
 
 pseudocode_bank_api = Blueprint("pseudocode_bank_api", __name__, url_prefix="/api/pseudocode_bank")
 
@@ -22,22 +25,48 @@ LEVEL_MAP = {
 
 VALID_COLS = {"level1", "level2", "level3", "level4", "level5"}
 
-import os
-import requests
-import re
-
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions").strip()
 
+# If you want strict origins, set ALLOWED_ORIGINS env var like:
+# ALLOWED_ORIGINS="http://localhost:4500,http://127.0.0.1:4500,https://open-coding-society.github.io"
+_allowed = os.getenv("ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = [o.strip() for o in _allowed.split(",") if o.strip()] or ["*"]
+
+
+def _corsify(resp):
+    origin = request.headers.get("Origin", "")
+    if "*" in ALLOWED_ORIGINS:
+        resp.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
+    else:
+        if origin in ALLOWED_ORIGINS:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+
+    # We are NOT relying on cookies for these endpoints.
+    resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    resp.headers["Vary"] = "Origin"
+    return resp
+
+
+def _no_cache(resp):
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
 
 # ----------------------------
-# Preflight (helps stop 405/blocked preflight)
+# Preflight (must include CORS headers)
 # ----------------------------
 @pseudocode_bank_api.route("/random", methods=["OPTIONS"])
 @pseudocode_bank_api.route("/ai_autofill", methods=["OPTIONS"])
 @pseudocode_bank_api.route("/grade", methods=["OPTIONS"])
 def pseudocode_preflight():
-    return make_response("", 204)
+    resp = make_response("", 204)
+    resp = _no_cache(resp)
+    resp = _corsify(resp)
+    return resp
 
 
 def _deepseek_ready() -> bool:
@@ -266,14 +295,6 @@ def _resolve_level(raw: str) -> str:
     return LEVEL_MAP.get(raw, raw)
 
 
-def _no_cache(resp):
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
-    resp.headers["Vary"] = "Origin"
-    return resp
-
-
 @pseudocode_bank_api.route("/random", methods=["GET"])
 def random_question():
     level = _resolve_level(request.args.get("level", "1"))
@@ -284,7 +305,9 @@ def random_question():
             "success": False,
             "message": "Invalid level. Use 1-5 or super_easy/easy/medium/hard/hacker."
         })
-        return _no_cache(resp), 400
+        resp = _no_cache(resp)
+        resp = _corsify(resp)
+        return resp, 400
 
     col = getattr(PseudocodeQuestionBank, level)
 
@@ -319,7 +342,9 @@ def random_question():
 
     if not row:
         resp = jsonify({"success": False, "message": f"No questions available for {level}."})
-        return _no_cache(resp), 404
+        resp = _no_cache(resp)
+        resp = _corsify(resp)
+        return resp, 404
 
     resp = jsonify({
         "success": True,
@@ -327,16 +352,17 @@ def random_question():
         "question": getattr(row, level),
         "question_id": row.id
     })
-    return _no_cache(resp), 200
+    resp = _no_cache(resp)
+    resp = _corsify(resp)
+    return resp, 200
 
 
 @pseudocode_bank_api.route("/ai_autofill", methods=["GET", "POST"])
 def ai_autofill():
     if not _deepseek_ready():
-        return jsonify({
-            "success": False,
-            "message": "DeepSeek API key not configured on server."
-        }), 500
+        resp = jsonify({"success": False, "message": "DeepSeek API key not configured on server."})
+        resp = _corsify(resp)
+        return resp, 500
 
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
@@ -347,16 +373,22 @@ def ai_autofill():
         level = request.args.get("level", None)
 
     if qid is None:
-        return jsonify({"success": False, "message": "Missing question_id"}), 400
+        resp = jsonify({"success": False, "message": "Missing question_id"})
+        resp = _corsify(resp)
+        return resp, 400
 
     try:
         qid_int = int(qid)
     except Exception:
-        return jsonify({"success": False, "message": "question_id must be an integer"}), 400
+        resp = jsonify({"success": False, "message": "question_id must be an integer"})
+        resp = _corsify(resp)
+        return resp, 400
 
     row = PseudocodeQuestionBank.query.get(qid_int)
     if not row:
-        return jsonify({"success": False, "message": "Question not found"}), 404
+        resp = jsonify({"success": False, "message": "Question not found"})
+        resp = _corsify(resp)
+        return resp, 404
 
     question_text = None
     if level and hasattr(row, level):
@@ -370,18 +402,24 @@ def ai_autofill():
                 break
 
     if not question_text:
-        return jsonify({"success": False, "message": "Question text not found"}), 404
+        resp = jsonify({"success": False, "message": "Question text not found"})
+        resp = _corsify(resp)
+        return resp, 404
 
     try:
         answer = ai_autofill_pseudocode(question_text)
-        return jsonify({
+        resp = jsonify({
             "success": True,
             "answer": answer,
             "question_id": qid_int,
             "level": level
-        }), 200
+        })
+        resp = _corsify(resp)
+        return resp, 200
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+        resp = jsonify({"success": False, "message": str(e)})
+        resp = _corsify(resp)
+        return resp, 500
 
 
 @pseudocode_bank_api.route("/grade", methods=["POST"])
@@ -391,15 +429,18 @@ def grade_question():
     qid = data.get("question_id", None)
     user_code = data.get("pseudocode", "")
     level = data.get("level", None)
-
     use_ai = bool(data.get("use_ai", True))
 
     if qid is None:
-        return jsonify({"success": False, "message": "Missing question_id"}), 400
+        resp = jsonify({"success": False, "message": "Missing question_id"})
+        resp = _corsify(resp)
+        return resp, 400
 
     row = PseudocodeQuestionBank.query.get(qid)
     if not row:
-        return jsonify({"success": False, "message": "Question not found"}), 404
+        resp = jsonify({"success": False, "message": "Question not found"})
+        resp = _corsify(resp)
+        return resp, 404
 
     question_text = None
     if level and hasattr(row, level):
@@ -413,12 +454,14 @@ def grade_question():
                 break
 
     if not question_text:
-        return jsonify({"success": False, "message": "Question text not found"}), 404
+        resp = jsonify({"success": False, "message": "Question text not found"})
+        resp = _corsify(resp)
+        return resp, 404
 
     if use_ai and _deepseek_ready():
         try:
             ai = ai_grade_pseudocode(question_text, user_code)
-            return jsonify({
+            resp = jsonify({
                 "success": True,
                 "question_id": qid,
                 "level": level,
@@ -427,13 +470,15 @@ def grade_question():
                 "notes": "AI grading enabled.",
                 "feedback": ai["feedback"],
                 "improved_pseudocode": ai["improved_pseudocode"]
-            }), 200
+            })
+            resp = _corsify(resp)
+            return resp, 200
         except Exception as e:
             print("AI grading failed, falling back:", e)
 
     result = grade_pseudocode(question_text, user_code)
 
-    return jsonify({
+    resp = jsonify({
         "success": True,
         "question_id": qid,
         "level": level,
@@ -442,4 +487,6 @@ def grade_question():
         "notes": result["notes"],
         "feedback": "Rule-based checker used. Add the missing constructs and try again.",
         "improved_pseudocode": ""
-    }), 200
+    })
+    resp = _corsify(resp)
+    return resp, 200
