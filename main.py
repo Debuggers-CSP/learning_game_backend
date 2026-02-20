@@ -20,7 +20,6 @@ from flask_cors import CORS
 
 # import "objects" from "this" project
 from __init__ import app, db, login_manager  # Key Flask objects
-
 # API endpoints
 from api.user import user_api
 from api.python_exec_api import python_exec_api
@@ -72,16 +71,13 @@ app.config['KASM_API_KEY'] = os.getenv('KASM_API_KEY')
 app.config['KASM_API_KEY_SECRET'] = os.getenv('KASM_API_KEY_SECRET')
 
 # =========================================================
-# ✅ CORS SETUP (fixes “Failed to fetch / Network/CORS error”)
-# - Update FRONTEND_ORIGIN to match your `make` dev server origin.
-# - You can also set FRONTEND_ORIGINS="http://localhost:4100,http://127.0.0.1:4100"
+# ✅ CORS SETUP
+# Allow your frontend at http://localhost:4500
 # =========================================================
-origins_env = os.getenv("FRONTEND_ORIGINS", "").strip()
-if origins_env:
-    allowed_origins = [o.strip() for o in origins_env.split(",") if o.strip()]
-else:
-    # default guess: change 4100 to whatever your frontend uses
-    allowed_origins = ["http://localhost:4100", "http://127.0.0.1:4100"]
+allowed_origins = [
+    "http://localhost:4500",
+    "http://127.0.0.1:4500",
+]
 
 CORS(
     app,
@@ -108,9 +104,9 @@ app.register_blueprint(student_api)
 app.register_blueprint(study_api)
 app.register_blueprint(classroom_api)
 app.register_blueprint(feedback_api)
-app.register_blueprint(data_export_import_api)  # Register the data export/import API
-app.register_blueprint(joke_api)  # Register the joke API blueprint
-app.register_blueprint(post_api)  # Register the social media post API
+app.register_blueprint(data_export_import_api)
+app.register_blueprint(joke_api)
+app.register_blueprint(post_api)
 app.register_blueprint(robop_api)
 app.register_blueprint(endgame_api)
 app.register_blueprint(debug_challenge_api)
@@ -126,14 +122,12 @@ with app.app_context():
     initPseudocodeQuestionBank()
     init_debug_challenge_data()
 
-# Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
 @login_manager.unauthorized_handler
 def unauthorized_callback():
     return redirect(url_for('login', next=request.path))
 
-# register URIs for server pages
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -142,7 +136,6 @@ def load_user(user_id):
 def inject_user():
     return dict(current_user=current_user)
 
-# Helper function to check if the URL is safe for redirects
 def is_safe_url(target):
     ref_url = urlparse(request.host_url)
     test_url = urlparse(urljoin(request.host_url, target))
@@ -163,7 +156,7 @@ def login():
             error = 'Invalid username or password.'
     return render_template("login.html", error=error, next=next_page)
 
-@app.route('/studytracker')  # route for the study tracker page
+@app.route('/studytracker')
 def studytracker():
     return render_template("studytracker.html")
 
@@ -172,11 +165,11 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
-@app.errorhandler(404)  # catch for URL not found
+@app.errorhandler(404)
 def page_not_found(e):
     return render_template('404.html'), 404
 
-@app.route('/')  # connects default URL to index() function
+@app.route('/')
 def index():
     print("Home:", current_user)
     return render_template("index.html")
@@ -196,7 +189,6 @@ def debug_challenge_page():
 def debug_challenge_alias():
     return render_template("debug_challenge.html")
 
-# Handle socket.io requests to prevent errors
 @app.route('/socket.io/', defaults={'path': ''}, methods=['GET', 'POST', 'OPTIONS'])
 @app.route('/socket.io/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
 def socket_io_stub(path=''):
@@ -387,128 +379,6 @@ def reset_password(user_id):
         return jsonify({'message': 'Password reset successfully'}), 200
     return jsonify({'error': 'Password reset failed'}), 500
 
-@app.route('/kasm_users')
-def kasm_users():
-    SERVER = current_app.config.get('KASM_SERVER')
-    API_KEY = current_app.config.get('KASM_API_KEY')
-    API_KEY_SECRET = current_app.config.get('KASM_API_KEY_SECRET')
-
-    if not SERVER or not API_KEY or not API_KEY_SECRET:
-        return render_template('error.html', message='KASM keys are missing'), 400
-
-    try:
-        url = f"{SERVER}/api/public/get_users"
-        data = {"api_key": API_KEY, "api_key_secret": API_KEY_SECRET}
-        response = requests.post(url, json=data, timeout=10)
-
-        if response.status_code != 200:
-            return render_template('error.html', message='Failed to get users', code=response.status_code), response.status_code
-
-        users = response.json().get('users', [])
-
-        for user in users:
-            last_session = user.get('last_session')
-            try:
-                user['last_session'] = datetime.fromisoformat(last_session) if last_session else None
-            except ValueError:
-                user['last_session'] = None
-
-        sorted_users = sorted(users, key=lambda x: x['last_session'] or datetime.min, reverse=True)
-        return render_template('kasm_users.html', users=sorted_users)
-
-    except requests.RequestException as e:
-        return render_template('error.html', message=f"Error connecting to KASM API: {str(e)}"), 500
-
-@app.route('/delete_user/<user_id>', methods=['DELETE'])
-def delete_user_kasm(user_id):
-    if current_user.role != 'Admin':
-        return jsonify({'error': 'Unauthorized'}), 403
-
-    SERVER = current_app.config.get('KASM_SERVER')
-    API_KEY = current_app.config.get('KASM_API_KEY')
-    API_KEY_SECRET = current_app.config.get('KASM_API_KEY_SECRET')
-
-    if not SERVER or not API_KEY or not API_KEY_SECRET:
-        return {'message': 'KASM keys are missing'}, 400
-
-    try:
-        url = f"{SERVER}/api/public/delete_user"
-        data = {
-            "api_key": API_KEY,
-            "api_key_secret": API_KEY_SECRET,
-            "target_user": {"user_id": user_id},
-            "force": False
-        }
-        response = requests.post(url, json=data)
-
-        if response.status_code == 200:
-            return {'message': 'User deleted successfully'}, 200
-        else:
-            return {'message': 'Failed to delete user'}, response.status_code
-
-    except requests.RequestException as e:
-        return {'message': 'Error connecting to KASM API', 'error': str(e)}, 500
-
-# ==================== BADGE EDIT API  ====================
-
-@app.route("/robop/api/users/<int:user_id>/update_badge", methods=["PUT"])
-def update_user_badge_info(user_id):
-    try:
-        user = RobopUser.query.get(user_id)
-        if not user:
-            return jsonify({"success": False, "error": "User not found"}), 404
-
-        data = request.get_json() or {}
-        print(f"Updating badge info for user {user_id}: {data}")
-
-        badges = UserBadge.query.filter_by(user_id=user_id).order_by(UserBadge._date_earned.desc()).all()
-
-        if not badges:
-            return jsonify({"success": False, "error": "No badges found for this user"}), 404
-
-        if 'best_badge' in data or 'best_score' in data or 'best_sector' in data:
-            best_badge = sorted(
-                badges,
-                key=lambda b: (b._score, b._date_earned),
-                reverse=True
-            )[0]
-
-            if 'best_badge' in data:
-                best_badge._badge_name = data['best_badge']
-            if 'best_score' in data:
-                best_badge._score = int(data['best_score'])
-            if 'best_sector' in data:
-                best_badge._sector_id = int(data['best_sector'])
-
-        if 'last_badge' in data:
-            last_badge = badges[0]
-            last_badge._badge_name = data['last_badge']
-
-        db.session.commit()
-        return jsonify({"success": True, "message": "Badge information updated successfully"})
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"ERROR updating badge info: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 400
-
-@app.route('/update_user/<string:uid>', methods=['PUT'])
-def update_user(uid):
-    if current_user.role != 'Admin':
-        return jsonify({'error': 'Unauthorized'}), 403
-
-    data = request.get_json() or {}
-    print(f"Request Data: {data}")
-
-    user = User.query.filter_by(_uid=uid).first()
-    if user:
-        print(f"Found user: {user.uid}")
-        user.update(data)
-        return jsonify({"message": "User updated successfully."}), 200
-    else:
-        print("User not found.")
-        return jsonify({"message": "User not found."}), 404
-
 # Create an AppGroup for custom commands
 custom_cli = AppGroup('custom', help='Custom commands')
 
@@ -521,10 +391,7 @@ def generate_data():
 
 app.cli.add_command(custom_cli)
 
-# =========================================================
-# ✅ Run server on a stable port (prevents frontend calling 8320
-# while backend silently moved to 8321+)
-# =========================================================
+# ✅ Run server on a stable port (frontend expects 8320)
 if __name__ == "__main__":
     host = "0.0.0.0"
     try:
