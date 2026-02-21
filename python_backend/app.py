@@ -8,9 +8,9 @@ app = Flask(__name__)
 CORS(app, supports_credentials=True, origins="*")
 
 
-def _run_code(code: str) -> str:
+def _run_code(code: str) -> tuple[str, bool]:
     if not code.strip():
-        return "No code provided."
+        return "No code provided.", False
     with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as tmp:
         tmp.write(code.encode())
         tmp.flush()
@@ -23,11 +23,12 @@ def _run_code(code: str) -> str:
                 cwd="/tmp",
                 env={"HOME": "/tmp", "PATH": "/usr/bin:/usr/local/bin"}
             )
-            return (result.stdout or "") + (result.stderr or "")
+            output = (result.stdout or "") + (result.stderr or "")
+            return output, result.returncode == 0
         except subprocess.TimeoutExpired:
-            return "Execution timed out (5 s limit)."
+            return "Execution timed out (5 s limit).", False
         except Exception as exc:
-            return f"Error running code: {str(exc)}"
+            return f"Error running code: {str(exc)}", False
         finally:
             os.unlink(tmp.name)
 
@@ -38,11 +39,12 @@ def health_check():
 
 
 @app.post("/run/python")
+@app.post("/api/run-python")
 def run_python():
     data = request.get_json(silent=True) or {}
     code = data.get("code", "")
-    output = _run_code(code)
-    return jsonify({"output": output})
+    output, is_correct = _run_code(code)
+    return jsonify({"output": output, "is_correct": is_correct})
 
 
 if __name__ == "__main__":

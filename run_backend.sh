@@ -12,6 +12,8 @@ else
     echo "❌ Virtual environment not found! Run setup_and_run.sh first"
     exit 1
 fi
+DEEPSEEK_API_KEY = "sk-b8001a4de18b463d8b59233263b479d7"
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
 # Kill any existing python_backend processes and keepalive script
 pkill -f "python.*python_backend/app.py" 2>/dev/null || true

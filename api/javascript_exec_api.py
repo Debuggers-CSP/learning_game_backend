@@ -13,7 +13,7 @@ class JavaScriptExec(Resource):
         code = data.get("code", "")
 
         if not code.strip():
-            return {"output": "⚠️ No code provided."}, 400
+            return {"output": "⚠️ No code provided.", "is_correct": False}, 400
 
         # Prepend strict mode to enforce proper variable declarations
         strict_code = '"use strict";\n' + code
@@ -32,13 +32,16 @@ class JavaScriptExec(Resource):
                     env={"HOME": "/tmp", "PATH": "/opt/homebrew/bin:/usr/bin:/usr/local/bin"}  # Restricted environment (includes macOS Homebrew path)
                 )
                 output = result.stdout + result.stderr
+                is_correct = result.returncode == 0
             except subprocess.TimeoutExpired:
                 output = "⏱️ Execution timed out (5 s limit)."
+                is_correct = False
             except Exception as e:
                 output = f"⚠️ Error running JavaScript: {str(e)}"
+                is_correct = False
             finally:
                 os.unlink(tmp.name)
 
-        return {"output": output}
+        return {"output": output, "is_correct": is_correct}
 
 api.add_resource(JavaScriptExec, "/javascript")

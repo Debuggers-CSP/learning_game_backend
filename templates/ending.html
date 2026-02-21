@@ -916,8 +916,9 @@
             } else {
                 const data = await response.json();
                 const output = data.output || "(no output)";
-                appendChatMessage("assistant", `Run Output: ${output}`);
-                chatHistory.push({ role: "assistant", content: `Run Output: ${output}` });
+                const verdict = data.is_correct ? "✅ Correct" : "❌ Incorrect";
+                appendChatMessage("assistant", `Run Output (${verdict}): ${output}`);
+                chatHistory.push({ role: "assistant", content: `Run Output (${verdict}): ${output}` });
             }
         }
 
@@ -977,9 +978,10 @@
         }
         const data = await response.json();
         const output = data.output || "(no output)";
+        const verdict = data.is_correct ? "✅ Correct" : "❌ Incorrect";
         if (codeRunOutput) {
             codeRunOutput.style.display = "block";
-            codeRunOutput.textContent = output;
+            codeRunOutput.textContent = `Status: ${verdict}\n\n${output}`;
         }
         if (codeRunStatus) codeRunStatus.textContent = "";
         if (runCodeBtn) runCodeBtn.disabled = false;

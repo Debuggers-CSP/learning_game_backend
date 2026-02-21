@@ -13,7 +13,7 @@ class PythonExec(Resource):
         code = data.get("code", "")
 
         if not code.strip():
-            return {"output": "⚠️ No code provided."}, 400
+            return {"output": "⚠️ No code provided.", "is_correct": False}, 400
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as tmp:
             tmp.write(code.encode())
@@ -29,13 +29,16 @@ class PythonExec(Resource):
                     env={"HOME": "/tmp", "PATH": "/usr/bin:/usr/local/bin"}  # Restricted environment
                 )
                 output = result.stdout + result.stderr
+                is_correct = result.returncode == 0
             except subprocess.TimeoutExpired:
                 output = "⏱️ Execution timed out (5 s limit)."
+                is_correct = False
             except Exception as e:
                 output = f"Error running code: {str(e)}"
+                is_correct = False
             finally:
                 os.unlink(tmp.name)
 
-        return {"output": output}
+        return {"output": output, "is_correct": is_correct}
 
 api.add_resource(PythonExec, "/python")
