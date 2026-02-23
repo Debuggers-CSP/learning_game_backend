@@ -314,26 +314,47 @@ def add_robop_user():
 def robop_users():
     users = RobopUser.query.order_by(RobopUser.id.asc()).all()
 
+    # Badge tier ranking (higher = better)
+    # Anything unknown (like "Seed Badge") becomes 0
+    BADGE_RANK = {
+        "Gold": 4,
+        "Silver": 3,
+        "Bronze": 2,
+        "Participant": 1,
+    }
+
+    def badge_rank(name: str) -> int:
+        return BADGE_RANK.get((name or "").strip(), 0)
+
+    def best_badge_key(ub: UserBadge):
+        """
+        Sort key where "best" means:
+        - Higher badge tier is better
+        - Fewer attempts is better
+        - Not using autofill is better
+        - More recent is better
+        """
+        tier = badge_rank(getattr(ub, "_badge_name", ""))
+        attempts = getattr(ub, "_attempts", 10**9)
+        used_autofill = bool(getattr(ub, "_used_autofill", False))
+        dt = getattr(ub, "_date_earned", None) or datetime.min
+
+        # We want max() by this key, so keep "good" values higher:
+        # -tier? No, tier already higher is better
+        # -attempts: fewer is better -> invert attempts
+        # used_autofill: False better -> invert to 1/0
+        return (tier, -attempts, 0 if used_autofill else 1, dt)
+
     robop_user_data = []
+
     for u in users:
-        badges = (
-            UserBadge.query
-            .filter_by(user_id=u.id)
-            .order_by(UserBadge._date_earned.desc())
-            .all()
-        )
+        # Use relationship if available; otherwise fall back to query
+        badges = list(getattr(u, "badges", []) or [])
+        badges.sort(key=lambda b: getattr(b, "_date_earned", datetime.min), reverse=True)
 
         badge_count = len(badges)
-
-        best_badge = None
-        if badges:
-            best_badge = sorted(
-                badges,
-                key=lambda b: (b._score, b._date_earned),
-                reverse=True
-            )[0]
-
         last_earned = badges[0] if badges else None
+        best_badge = max(badges, key=best_badge_key) if badges else None
 
         robop_user_data.append({
             "id": u.id,
@@ -342,12 +363,20 @@ def robop_users():
             "last_name": u.last_name,
             "created": u._created.isoformat() if getattr(u, "_created", None) else None,
             "last_login": u._last_login.isoformat() if getattr(u, "_last_login", None) else None,
+
             "badge_count": badge_count,
+
+            # best badge details
             "best_badge": best_badge._badge_name if best_badge else None,
-            "best_score": best_badge._score if best_badge else None,
             "best_sector": best_badge._sector_id if best_badge else None,
+            "best_module": best_badge._module_id if best_badge else None,
+            "best_attempts": best_badge._attempts if best_badge else None,
+            "best_used_autofill": best_badge._used_autofill if best_badge else None,
+            "best_earned": best_badge._date_earned.isoformat() if best_badge and best_badge._date_earned else None,
+
+            # last earned details
             "last_badge": last_earned._badge_name if last_earned else None,
-            "last_earned": last_earned._date_earned.isoformat() if last_earned else None,
+            "last_earned": last_earned._date_earned.isoformat() if last_earned and last_earned._date_earned else None,
         })
 
     return render_template("robop_users.html", robop_user_data=robop_user_data)
