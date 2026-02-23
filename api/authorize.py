@@ -2,72 +2,79 @@ from flask import request, current_app, g
 from flask_login import current_user
 from functools import wraps
 import jwt
-from model.user import User
+from model.robop_user import RobopUser  
+
+
+def _get_token_from_request():
+    """
+    Priority:
+      1) Authorization: Bearer <token>
+      2) Cookie: JWT_TOKEN_NAME
+    """
+    auth_header = request.headers.get("Authorization", "") or ""
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+
+    cookie_name = current_app.config.get("JWT_TOKEN_NAME")
+    if cookie_name:
+        return request.cookies.get(cookie_name)
+    return None
+
 
 def auth_required(roles=None):
-    '''
-    Hybrid authentication decorator supporting both session and JWT token authentication.
-    
-    This function guards API endpoints by:
-      1. First checking for Flask-Login session authentication (current_user)
-      2. If no session, checks for valid JWT token in request cookies
-      3. Decodes the token and retrieves user data from database
-      4. Validates user has required role(s) if specified
-      5. Sets g.current_user in Flask's global context for use in decorated function
-      6. Returns the decorated function if all checks pass
-    
-    Authentication priority:
-      - Session authentication (Flask-Login) is checked first (faster)
-      - JWT token authentication is fallback (stateless, works for APIs)
-    
-    Args:
-        roles: String or list of allowed roles (e.g., "Admin" or ["Admin", "Teacher"])
-               If None, any authenticated user is allowed
-    
-    Possible error responses:
-      A. 401 / Unauthorized: no session and token is missing or invalid
-      B. 403 / Forbidden: user has insufficient permissions
-      C. 500 / Internal Server Error: something went wrong with token decoding
-    '''
     def decorator(func_to_guard):
         @wraps(func_to_guard)
         def decorated(*args, **kwargs):
+            # ✅ Always allow CORS preflight through
+            if request.method == "OPTIONS":
+                return ("", 200)
+
             user = None
-            auth_method = None
-            
-            # Method 1: Try Flask-Login session authentication first
-            if current_user.is_authenticated:
-                user = current_user
-                auth_method = "session"
-                # Set g.current_user for consistency across both auth methods
-                g.current_user = user
-            
-            # Method 2: Fall back to JWT token authentication
-            else:
-                token = request.cookies.get(current_app.config.get("JWT_TOKEN_NAME"))
+
+            # Method 1: Flask-Login session auth
+            try:
+                if current_user.is_authenticated:
+                    user = current_user
+                    g.current_user = user
+            except Exception:
+                # If flask-login isn't configured on this blueprint/app, don't crash
+                user = None
+
+            # Method 2: JWT (Bearer header OR cookie)
+            if user is None:
+                token = _get_token_from_request()
                 if not token:
                     return {
-                        "message": "Authentication required. No session or token found.",
+                        "message": "Authentication Token is missing!",
                         "data": None,
                         "error": "Unauthorized"
                     }, 401
-                
+
                 try:
-                    # Decode the token and retrieve the user data
-                    data = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
-                    user = User.query.filter_by(_uid=data["_uid"]).first()
-                    
+                    data = jwt.decode(
+                        token,
+                        current_app.config["SECRET_KEY"],
+                        algorithms=["HS256"]
+                    )
+
+                    uid = data.get("_uid")
+                    if not uid:
+                        return {
+                            "message": "Invalid token payload (missing _uid).",
+                            "data": None,
+                            "error": "Unauthorized"
+                        }, 401
+
+                    user = RobopUser.query.filter_by(_uid=uid).first()
                     if user is None:
                         return {
                             "message": "Invalid Authentication token!",
                             "data": None,
                             "error": "Unauthorized"
                         }, 401
-                    
-                    auth_method = "jwt"
-                    # Set the current_user in the global context
+
                     g.current_user = user
-                
+
                 except jwt.ExpiredSignatureError:
                     return {
                         "message": "Token has expired!",
@@ -86,38 +93,23 @@ def auth_required(roles=None):
                         "data": None,
                         "error": str(e)
                     }, 500
-            
-            # At this point, user is authenticated via either session or JWT
-            # Now check role requirements if specified
+
+            # Role check
             if roles:
-                # Normalize roles to list for consistent checking
                 required_roles = roles if isinstance(roles, list) else [roles]
-                
-                if user.role not in required_roles:
+                if getattr(user, "role", None) not in required_roles:
                     return {
                         "message": f"Insufficient permissions. Required roles: {', '.join(required_roles)}",
                         "data": None,
                         "error": "Forbidden"
                     }, 403
-            
-            # If this is a CORS preflight request, return 200 OK immediately
-            if request.method == 'OPTIONS':
-                return ('', 200)
-            
-            # Success - user is authenticated and authorized
-            # func_to_guard is the function decorated with @auth_required
-            # Returns with the original function arguments
+
             return func_to_guard(*args, **kwargs)
-        
+
         return decorated
-    
+
     return decorator
 
 
-# Alias for backward compatibility with existing code using token_required
 def token_required(roles=None):
-    '''
-    Backward compatibility alias for auth_required.
-    Existing code using @token_required will continue to work.
-    '''
     return auth_required(roles)

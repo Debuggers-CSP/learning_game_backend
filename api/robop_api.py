@@ -1,17 +1,19 @@
 # api/robop_api.py
 
-from flask import Blueprint, request, jsonify, session, make_response
+from flask import Blueprint, request, jsonify, make_response, current_app, g
 from model.robop_user import RobopUser, BadgeThreshold, UserBadge, StationHint
 from model.pseudocode_bank import PseudocodeQuestionBank
 import requests
 import json
 import os
 import re
-
+import jwt
+from datetime import datetime, timedelta
+from api.robop_jwt_authorize import robop_token_required
 from __init__ import db, app
 
 robop_api = Blueprint("robop_api", __name__, url_prefix="/api/robop")
-
+ROBOP_JWT_COOKIE = "ROBOP_JWT"
 
 # ----------------------------
 # Helpers
@@ -31,38 +33,6 @@ def _preflight_ok():
     resp = make_response("", 204)
     return resp
 
-def _is_local_request():
-    host = (request.host or "").lower()
-    return host.startswith("localhost") or host.startswith("127.0.0.1")
-
-def _get_or_create_dev_user():
-    demo_uid = app.config.get("ROBOP_DEV_UID", "demo_robop")
-    user = RobopUser.query.filter_by(_uid=demo_uid).first()
-    if user:
-        return user
-    user = RobopUser(
-        uid=demo_uid,
-        first_name="Demo",
-        last_name="Robop",
-        password=app.config.get("DEFAULT_PASSWORD", "password123"),
-    )
-    user.create()
-    return user
-
-def _require_session_uid():
-    """Return (uid, error_response)."""
-    uid = session.get("robop_uid")
-    if not uid:
-        # In local dev, auto-login a demo user to prevent frontend 401s
-        if (not app.config.get("IS_PRODUCTION")) or _is_local_request():
-            user = _get_or_create_dev_user()
-            session["robop_uid"] = user.uid
-            session.permanent = True
-            session.modified = True
-            return user.uid, None
-        return None, (jsonify({"success": False, "message": "Not logged in."}), 401)
-    return uid, None
-
 
 # ----------------------------
 # CORS preflight routes (optional but VERY helpful)
@@ -72,7 +42,6 @@ def _require_session_uid():
 @robop_api.route("/login", methods=["OPTIONS"])
 @robop_api.route("/logout", methods=["OPTIONS"])
 @robop_api.route("/me", methods=["OPTIONS"])
-@robop_api.route("/me/", methods=["OPTIONS"])
 @robop_api.route("/register", methods=["OPTIONS"])
 @robop_api.route("/assign_badge", methods=["OPTIONS"])
 @robop_api.route("/fetch_badges", methods=["OPTIONS"])
@@ -138,30 +107,23 @@ def register():
 @robop_api.route("/login", methods=["POST"])
 def login():
     data = _get_json()
-
     uid = (_pick(data, "id", "uid", "GitHubID", "githubId") or "").strip()
     password = _pick(data, "password", "Password") or ""
 
     if not uid or not password:
-        return jsonify({
-            "success": False,
-            "message": "Missing required fields: id and password."
-        }), 400
+        return jsonify({"success": False, "message": "Missing required fields"}), 400
 
     user = RobopUser.query.filter_by(_uid=uid).first()
     if not user or not user.is_password(password):
-        return jsonify({
-            "success": False,
-            "message": "Invalid credentials."
-        }), 401
+        return jsonify({"success": False, "message": "Invalid credentials"}), 401
 
-    # ✅ Set server-side session (stored in cookie)
-    session.clear()
-    session["robop_uid"] = user.uid
-    session.permanent = True            # optional, if you want persistence
-    session.modified = True             # ensure Set-Cookie is issued
-
-    user.touch_login()
+    # Issue JWT
+    exp = datetime.utcnow() + timedelta(hours=12)
+    token = jwt.encode(
+        {"uid": user.uid, "exp": exp},
+        current_app.config["SECRET_KEY"],
+        algorithm="HS256"
+    )
 
     resp = jsonify({
         "success": True,
@@ -169,37 +131,57 @@ def login():
         "user": user.to_dict()
     })
 
-    # If you ever want to manually set cookie attributes, do it here,
-    # but normally you should set these in app.config:
-    # SESSION_COOKIE_SAMESITE="None", SESSION_COOKIE_SECURE=True
+    is_production = current_app.config.get("IS_PRODUCTION", False)
+
+    # IMPORTANT cookie settings:
+    # - cross-site (pages.opencodingsociety.com -> flask.opencodingsociety.com) requires SameSite=None; Secure=True
+    if is_production:
+        resp.set_cookie(
+            ROBOP_JWT_COOKIE,
+            token,
+            max_age=12*60*60,
+            secure=True,
+            httponly=True,
+            samesite="None",
+            path="/",
+            domain=".opencodingsociety.com"
+        )
+    else:
+        resp.set_cookie(
+            ROBOP_JWT_COOKIE,
+            token,
+            max_age=12*60*60,
+            secure=False,
+            httponly=False,   # you can set True in dev too if you don’t need JS access
+            samesite="Lax",
+            path="/"
+        )
+
     return resp, 200
 
 
 @robop_api.route("/logout", methods=["POST"])
 def logout():
-    # ✅ Clear cookie-backed session
-    session.pop("robop_uid", None)
-    session.modified = True
-    return jsonify({"success": True, "message": "Logged out."}), 200
+    resp = jsonify({"success": True, "message": "Logged out."})
+    is_production = current_app.config.get("IS_PRODUCTION", False)
 
+    if is_production:
+        resp.set_cookie(
+            ROBOP_JWT_COOKIE, "", max_age=0,
+            secure=True, httponly=True, samesite="None",
+            path="/", domain=".opencodingsociety.com"
+        )
+    else:
+        resp.set_cookie(ROBOP_JWT_COOKIE, "", max_age=0, path="/")
+
+    return resp, 200
 
 @robop_api.route("/me", methods=["GET"], strict_slashes=False)
+@robop_token_required()
 def me():
-    uid, err = _require_session_uid()
-    if err:
-        return err
-
-    user = RobopUser.query.filter_by(_uid=uid).first()
+    user = getattr(g, "current_user", None)
     if not user:
-        if (not app.config.get("IS_PRODUCTION")) or _is_local_request():
-            user = _get_or_create_dev_user()
-            session["robop_uid"] = user.uid
-            session.modified = True
-        else:
-            session.pop("robop_uid", None)
-            session.modified = True
-            return jsonify({"success": False, "message": "Session invalid."}), 401
-
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
     return jsonify({"success": True, "user": user.to_dict()}), 200
 
 
@@ -208,20 +190,10 @@ def me():
 # ----------------------------
 
 @robop_api.route("/fetch_badges", methods=["GET"])
+@robop_token_required()
 def fetch_badges():
-      # 1. Get the ID directly from the URL parameters (?user_id=...)
-    user_id = request.args.get("user_id")
-    
-    if not user_id:
-        return jsonify({"success": False, "message": "User ID required"}), 400
-    else:
-        print(f"Fetching badges for user_id: {user_id}" )
-
-    # 2. Fetch badges matching that specific user_id
-    badges = UserBadge.query.filter_by(user_id=user_id).all()
-   
-    
-    # Use the to_dict() method from your model
+    user = g.robop_user
+    badges = UserBadge.query.filter_by(user_id=user.id).all()
     return jsonify([b.to_dict() for b in badges]), 200
 
 # Remember to add "/badges" to your robop_preflight route list at the top of robop_api.py!
@@ -233,85 +205,52 @@ def get_thresholds():
 
 
 @robop_api.route("/assign_badge", methods=["POST"])
-
+@robop_token_required()
 def assign_badge():
-    user_id = request.args.get("user_id")
-    
-    if not user_id:
-        return jsonify({"success": False, "message": "User ID required"}), 400
-    else:
-        print(f"Assigning badges for user_id: {user_id}" )
-
-    
-   
-
+    user = g.robop_user
     data = _get_json()
-    
-    # Extract the 5 pieces of data from the frontend
     sector_id = data.get("sector_id")
     module_id = data.get("module_id")
     attempts = data.get("attempts")
     used_autofill = data.get("used_autofill")
     badge_name = data.get("badge_name")
 
-    # Check for missing data
     if None in [sector_id, module_id, attempts, badge_name]:
         return jsonify({"success": False, "message": "Missing required badge metrics"}), 400
 
-    try:
-        # Pass ALL 6 arguments required by the new UserBadge.__init__
-        new_badge = UserBadge(
-            user_id=user_id,
-            sector_id=sector_id,
-            module_id=module_id,
-            attempts=attempts,
-            used_autofill=used_autofill,
-            badge_name=badge_name
-        )
-        db.session.add(new_badge)
-        db.session.commit()
-        return jsonify({"success": True, "message": f"Badge '{badge_name}' saved!"}), 201
-    except Exception as e:
-        db.session.rollback()
-        # This will print the exact error to your terminal so you can see it
-        print(f"Error saving badge: {e}") 
-        return jsonify({"success": False, "message": str(e)}), 500
+    new_badge = UserBadge(
+        user_id=user.id,
+        sector_id=sector_id,
+        module_id=module_id,
+        attempts=attempts,
+        used_autofill=bool(used_autofill),
+        badge_name=badge_name
+    )
+    db.session.add(new_badge)
+    db.session.commit()
+    return jsonify({"success": True, "message": f"Badge '{badge_name}' saved!"}), 201
     
 @robop_api.route("/progress", methods=["GET"], strict_slashes=False)
+@robop_token_required()
 def get_progress():
-    """Get current user's progress"""
-    uid, err = _require_session_uid()
-    if err:
-        return err
+    user = g.robop_user  
 
-    user = RobopUser.query.filter_by(_uid=uid).first()
-    if not user:
-        return jsonify({"success": False, "message": "User not found"}), 404
-
-    # Create progress if it doesn't exist
     if not user.progress:
         from model.robop_user import Progress
         progress = Progress(user_id=user.id)
         db.session.add(progress)
         db.session.commit()
+        db.session.refresh(user)  # optional: ensures relationship is updated
 
-    return jsonify({
-        "success": True,
-        "progress": user.progress.to_dict()
-    }), 200  
+    return jsonify({"success": True, "progress": user.progress.to_dict()}), 200
+
 
 @robop_api.route("/progress", methods=["POST"], strict_slashes=False)
+@robop_token_required()
 def update_progress():
-    """Update progress when user completes a module"""
-    uid, err = _require_session_uid()
-    if err:
-        return err
-
-    user = RobopUser.query.filter_by(_uid=uid).first()
-    if not user:
-        return jsonify({"success": False, "message": "User not found"}), 404
-
+    user = g.robop_user  
     data = _get_json()
+
     sector = data.get("sector")
     module = data.get("module")
     score = data.get("score", 0)
@@ -319,14 +258,13 @@ def update_progress():
     if sector is None or module is None:
         return jsonify({"success": False, "message": "Missing sector or module"}), 400
 
-    # Create progress if it doesn't exist
     if not user.progress:
         from model.robop_user import Progress
         progress = Progress(user_id=user.id)
         db.session.add(progress)
         db.session.commit()
+        db.session.refresh(user)  # optional
 
-    # Update progress
     user.progress.complete_module(sector, module, score)
 
     return jsonify({
