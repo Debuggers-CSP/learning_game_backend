@@ -28,24 +28,31 @@ VALID_COLS = {"level1", "level2", "level3", "level4", "level5"}
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions").strip()
 
-# If you want strict origins, set ALLOWED_ORIGINS env var like:
-# ALLOWED_ORIGINS="http://localhost:4500,http://127.0.0.1:4500,https://open-coding-society.github.io"
+# In dev, you can set:
+# ALLOWED_ORIGINS="http://127.0.0.1:4000,http://localhost:4000"
 _allowed = os.getenv("ALLOWED_ORIGINS", "").strip()
 ALLOWED_ORIGINS = [o.strip() for o in _allowed.split(",") if o.strip()] or ["*"]
 
 
 def _corsify(resp):
     origin = request.headers.get("Origin", "")
+
+    # If allowing all, reflect origin when present (safe for browser CORS)
     if "*" in ALLOWED_ORIGINS:
         resp.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
     else:
         if origin in ALLOWED_ORIGINS:
             resp.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            # If origin not allowed, do not set header (browser will block)
+            pass
 
-    # We are NOT relying on cookies for these endpoints.
     resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     resp.headers["Vary"] = "Origin"
+
+    # These endpoints do NOT need cookies, but setting this doesn't hurt
+    resp.headers["Access-Control-Allow-Credentials"] = "false"
     return resp
 
 
@@ -56,9 +63,6 @@ def _no_cache(resp):
     return resp
 
 
-# ----------------------------
-# Preflight (must include CORS headers)
-# ----------------------------
 @pseudocode_bank_api.route("/random", methods=["OPTIONS"])
 @pseudocode_bank_api.route("/ai_autofill", methods=["OPTIONS"])
 @pseudocode_bank_api.route("/grade", methods=["OPTIONS"])
@@ -197,12 +201,6 @@ def _requires(prompt: str):
         req.append("input")
     if "display" in p or "output" in p or "print" in p:
         req.append("output")
-    if "action" in p or "actions" in p or "event" in p:
-        req.append("actions")
-    if "result" in p or "score" in p or "state" in p or "status" in p or "outcome" in p:
-        req.append("result")
-    if "unknown" in p or "unexpected" in p:
-        req.append("unknown")
 
     if "if" in p or "otherwise" in p or "else" in p or "decision" in p:
         req.append("if")
@@ -245,20 +243,11 @@ def grade_pseudocode(question_text: str, user_code: str):
     if "output" in reqs and not has_any(["display", "print", "output", "show "]):
         missing.append("Output the final result")
 
-    if "actions" in reqs and not has_any(["action", "actions", "event", "step"]):
-        missing.append("Process each action in order")
-
-    if "result" in reqs and not has_any(["result", "score", "state", "status", "outcome", "count", "total"]):
-        missing.append("Define and update a result")
-
     if "if" in reqs and not has_any(["if", "else", "otherwise", "case", "switch"]):
-        missing.append("Use if/else decisions for actions")
+        missing.append("Use if/else decisions")
 
     if "loop" in reqs and not has_any(["for", "while", "repeat", "loop", "each"]):
-        missing.append("Loop once per action")
-
-    if "unknown" in reqs and not has_any(["unknown", "default", "otherwise", "else"]):
-        missing.append("Handle unknown actions safely")
+        missing.append("Loop when appropriate")
 
     if "function" in reqs and not has_any(["function", "procedure", "define", "def "]):
         missing.append("A FUNCTION/PROCEDURE definition")

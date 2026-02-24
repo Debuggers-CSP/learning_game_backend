@@ -32,8 +32,11 @@ class PseudocodeQuestionBank(db.Model):
 
 
 def initPseudocodeQuestionBank(force_recreate=False):
+    """
+    Call this ONCE during app startup.
+    It creates the table and seeds 50 questions if empty.
+    """
     with app.app_context():
-
         db.create_all()
 
         if force_recreate:
@@ -115,7 +118,6 @@ def initPseudocodeQuestionBank(force_recreate=False):
             "Find smallest missing positive integer in list L."
         ]
 
-        # Insert 10 rows (one question per level per row)
         for i in range(10):
             db.session.add(PseudocodeQuestionBank(
                 level1=level1_questions[i],
