@@ -119,7 +119,7 @@ with app.app_context():
     initJokes()
     initRobopUsers()
     init_endgame_data()
-    initPseudocodeQuestionBank()
+    initPseudocodeQuestionBank(force_recreate=True)
     init_debug_challenge_data()
 
 login_manager.login_view = "login"
