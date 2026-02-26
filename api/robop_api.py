@@ -598,7 +598,6 @@ What NOT to do:
 - Don't provide irrelevant information
 - Don't repeat yourself unnecessarily"""
 
-
 # ✅ 新函数放在这里（紧跟在 _build_system_prompt 之后）
 def _build_system_prompt_with_details(sector_num, question_num, details):
     """Generate AI system prompt with specific question details."""
