@@ -41,7 +41,7 @@ from api.pseudocode_bank_api import pseudocode_bank_api
 from model.pseudocode_bank import initPseudocodeQuestionBank
 from api.character_api import character_api
 from api.pseudocodeanswer_bank_api import pseudocodeanswer_bank_api
-from model.pseudocodeanswer1_bank import initPseudocodeAnswerBank
+from model.pseudocodeanswer_bank import initPseudocodeAnswerBank
 
 # database Initialization functions
 from model.user import User, initUsers

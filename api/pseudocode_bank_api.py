@@ -2,7 +2,7 @@
 from flask import Blueprint, request, jsonify, make_response
 from __init__ import db
 from model.pseudocode_bank import PseudocodeQuestionBank
-from model.pseudocodeanswer1_bank import PseudocodeAnswerBank
+from model.pseudocodeanswer_bank import PseudocodeAnswerBank
 
 import os
 import requests
