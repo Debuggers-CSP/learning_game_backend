@@ -1,7 +1,6 @@
 # api/pseudocodeanswer_bank_api.py
 from flask import Blueprint, request, jsonify, make_response
 from model.pseudocodeanswer_bank import PseudocodeAnswerBank
-
 import os
 
 pseudocodeanswer_bank_api = Blueprint(
@@ -16,7 +15,6 @@ ALLOWED_ORIGINS = [o.strip() for o in _allowed.split(",") if o.strip()] or ["*"]
 
 def _corsify(resp):
     origin = request.headers.get("Origin", "")
-
     if "*" in ALLOWED_ORIGINS:
         resp.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
     else:
