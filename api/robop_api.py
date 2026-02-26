@@ -598,7 +598,6 @@ What NOT to do:
 - Don't provide irrelevant information
 - Don't repeat yourself unnecessarily"""
 
-# ✅ 新函数放在这里（紧跟在 _build_system_prompt 之后）
 def _build_system_prompt_with_details(sector_num, question_num, details):
     """Generate AI system prompt with specific question details."""
     
@@ -611,75 +610,53 @@ def _build_system_prompt_with_details(sector_num, question_num, details):
     
     if details.get("type") == "robot_simulation":
         description = details.get('description', 'Navigate robot to goal')
-        grid_size = details.get('grid_size', [5, 5])
         start_pos = details.get('start_pos', 'unknown')
         goal_pos = details.get('goal_pos', 'unknown')
         walls = details.get('walls', [])
-        current_code = details.get('current_code', '(empty)')
         
         details_text += f"""
 **Robot Navigation Task:**
 - Task Description: {description}
-- Grid Size: {grid_size}
 - Starting Position: {start_pos}
 - Goal Position: {goal_pos}
 - Obstacles (Red Walls): {walls}
 - Available Commands: robot.MoveForward(n), robot.TurnRight(), robot.TurnLeft()
 
-Student's Current Code:
-```
-{current_code}
-```
-
-When helping:
-- Explain the robot's movement grid system
-- Guide them to visualize the path from start to goal
-- Help them avoid obstacles
-- Don't give the complete solution - help them think through each step
-"""
+**Important**: Adapt your response based on what the student asks:
+- If they ask for the answer/code → Give the complete working solution
+- If they ask for help/hints → Guide them step by step
+- If they ask conceptual questions → Explain the concepts
+- If they just chat → Respond naturally"""
     
     elif details.get("type") == "pseudocode":
         level = details.get('level', 'unknown')
-        question_id = details.get('question_id', 'unknown')
         question_text = details.get('question_text', '(no prompt available)')
-        current_code = details.get('current_code', '(empty)')
         
         details_text += f"""
 **Pseudocode Challenge:**
 - Level: {level}
-- Question ID: {question_id}
 
 Question Prompt:
 {question_text}
 
-Student's Current Code:
-```
-{current_code}
-```
-
-When helping:
-- Guide them on College Board pseudocode syntax
-- Help them think about algorithm structure (loops, conditionals, variables)
-- Point out logical errors without giving the answer
-- Encourage them to trace through their logic
-"""
+**Important**: Adapt your response based on what the student asks:
+- If they ask for the answer/code → Give the complete pseudocode solution
+- If they ask for help/hints → Guide them step by step
+- If they ask conceptual questions → Explain the concepts"""
     
     elif details.get("type") == "mcq":
         question = details.get('question', 'unknown')
         options = details.get('options', [])
-        options_str = ', '.join(options)
         
         details_text += f"""
 **Multiple Choice Question:**
 Question: {question}
-Options: {options_str}
+Options: {', '.join(options)}
 
-When helping:
-- Explain the underlying computer science concepts
-- Guide them to think through why each option might be right or wrong
-- Don't reveal the correct answer directly
-- Help them understand the fundamental principles
-"""
+**Important**: Adapt your response based on what the student asks:
+- If they ask for the answer → Tell them the correct option
+- If they ask for explanation → Explain the concept
+- If they ask why other options are wrong → Explain each one"""
     
     return base_prompt + details_text
 
