@@ -54,6 +54,10 @@ ALLOWED_ORIGINS = [
 ]
 
 # Apply CORS ONLY to API routes
+# Key points:
+# - restrict to /api/* so assets/pages aren’t affected
+# - include OPTIONS for preflight
+# - vary Origin to keep caches correct
 cors = CORS(
     app,
     supports_credentials=True,
@@ -66,12 +70,13 @@ cors = CORS(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-# ✅ NEW: guarantee credentials header is present when Origin matches
+# ✅ ADD THIS BACK (it helps cookies across origins if you ever use login sessions)
 @app.after_request
 def add_cors_headers(response):
     origin = response.headers.get("Access-Control-Allow-Origin")
     if origin:
         response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Vary"] = "Origin"
     return response
 
 # -------------------------
@@ -115,8 +120,6 @@ _env_is_production = str(os.environ.get("IS_PRODUCTION", "")).strip().lower() in
     "on",
 }
 app.config["IS_PRODUCTION"] = _env_is_production
-
-# ✅ KEEP: these are correct for cookies across domains in prod
 app.config["SESSION_COOKIE_SAMESITE"] = "None" if app.config["IS_PRODUCTION"] else "Lax"
 app.config["SESSION_COOKIE_SECURE"] = True if app.config["IS_PRODUCTION"] else False
 
@@ -214,3 +217,76 @@ app.config["KASM_API_KEY_SECRET"] = os.environ.get("KASM_API_KEY_SECRET") or Non
 # GROQ settings
 # -------------------------
 app.config["GROQ_API_KEY"] = os.environ.get("GROQ_API_KEY") or None
+
+
+# ============================================================
+# ✅ PSEUDOCODE BANKS: register models + create tables + seed
+# ============================================================
+# WHY THIS IS NEEDED:
+# - SQLAlchemy only creates tables for models it has imported
+# - so we import the model modules, then run db.create_all()
+# - then seed question bank first, answer bank second
+
+def init_app_db_and_seed():
+    """
+    Call once at import/startup.
+    Creates tables and seeds pseudocode question+answer banks.
+    """
+    with app.app_context():
+        # Import models so SQLAlchemy "registers" them
+        try:
+            from model.pseudocode_bank import initPseudocodeQuestionBank  # noqa: F401
+        except Exception as e:
+            print("⚠️ Could not import model.pseudocode_bank:", e)
+            initPseudocodeQuestionBank = None
+
+        try:
+            # IMPORTANT: adjust import if your filename is different
+            # If your model file is model/pseudocodeanswer_bank.py this is correct:
+            from model.pseudocodeanswer_bank import initPseudocodeAnswerBank  # noqa: F401
+        except Exception as e:
+            print("⚠️ Could not import model.pseudocodeanswer_bank:", e)
+            initPseudocodeAnswerBank = None
+
+        # Create all tables for all imported models
+        try:
+            db.create_all()
+        except Exception as e:
+            print("❌ db.create_all() failed:", e)
+
+        # Seed question bank
+        if initPseudocodeQuestionBank:
+            try:
+                initPseudocodeQuestionBank(force_recreate=False)
+            except Exception as e:
+                print("⚠️ initPseudocodeQuestionBank failed:", e)
+
+        # Seed answer bank
+        if initPseudocodeAnswerBank:
+            try:
+                initPseudocodeAnswerBank(force_recreate=False)
+            except Exception as e:
+                print("⚠️ initPseudocodeAnswerBank failed:", e)
+
+        # Print tables to confirm
+        try:
+            print("✅ DB URI:", app.config.get("SQLALCHEMY_DATABASE_URI"))
+            print("✅ Tables:", db.inspect(db.engine).get_table_names())
+        except Exception as e:
+            print("⚠️ Could not list tables:", e)
+
+
+# Run once on startup
+init_app_db_and_seed()
+
+
+# ============================================================
+# (Optional) Blueprint registration
+# ============================================================
+# Only do this if your project DOES NOT already register it elsewhere.
+# If you already register blueprints in app.py/main.py, keep it there.
+try:
+    from api.pseudocode_bank_api import pseudocode_bank_api
+    app.register_blueprint(pseudocode_bank_api)
+except Exception as e:
+    print("ℹ️ pseudocode_bank_api blueprint not registered here (maybe already registered):", e)
