@@ -38,9 +38,9 @@ class PseudocodeAnswerBank(db.Model):
 
 def initPseudocodeAnswerBank(force_recreate: bool = False):
     """
-    Call once at app startup.
-    Creates table and seeds answers.
-    IMPORTANT: This version fills in missing answers even if some already exist.
+    Call this ONCE during app startup.
+    It creates the table and seeds 50 answers if empty.
+    This matches how your PseudocodeQuestionBank seeds.
     """
     from model.pseudocode_bank import PseudocodeQuestionBank  # avoid circular import
 
@@ -51,6 +51,11 @@ def initPseudocodeAnswerBank(force_recreate: bool = False):
             print("Recreating PseudocodeAnswerBank...")
             PseudocodeAnswerBank.__table__.drop(db.engine, checkfirst=True)
             PseudocodeAnswerBank.__table__.create(db.engine, checkfirst=True)
+
+        # ✅ If already seeded, stop (same style as question bank)
+        if PseudocodeAnswerBank.query.first():
+            print("PseudocodeAnswerBank already seeded.")
+            return
 
         # ✅ FULL ANSWER KEY 1..50
         ANSWERS = {
@@ -110,7 +115,6 @@ def initPseudocodeAnswerBank(force_recreate: bool = False):
             50: "k ← 1\nWHILE true\n  found ← false\n  FOR EACH x IN L\n    IF x = k\n      found ← true\n    END IF\n  END FOR\n  IF found = false\n    RETURN k\n  END IF\n  k ← k + 1\nEND WHILE",
         }
 
-        # Level labels (optional but nice)
         LEVEL_BY_ID = {}
         for qid in range(1, 11):
             LEVEL_BY_ID[qid] = "level1"
@@ -123,20 +127,14 @@ def initPseudocodeAnswerBank(force_recreate: bool = False):
         for qid in range(41, 51):
             LEVEL_BY_ID[qid] = "level5"
 
+        # Only seed answers if the questions exist
         existing_questions = {
             q.id for q in PseudocodeQuestionBank.query.with_entities(PseudocodeQuestionBank.id).all()
-        }
-
-        existing_answers = {
-            a.question_id for a in PseudocodeAnswerBank.query.with_entities(PseudocodeAnswerBank.question_id).all()
         }
 
         seeded = 0
         for qid, ans in ANSWERS.items():
             if qid not in existing_questions:
-                continue
-
-            if qid in existing_answers:
                 continue
 
             db.session.add(
@@ -149,4 +147,4 @@ def initPseudocodeAnswerBank(force_recreate: bool = False):
             seeded += 1
 
         db.session.commit()
-        print(f"PseudocodeAnswerBank seeded {seeded} NEW answers (now should be 50 total).")
+        print(f"PseudocodeAnswerBank seeded with {seeded} answers.")

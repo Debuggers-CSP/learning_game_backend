@@ -114,6 +114,7 @@ app.register_blueprint(endgame_api)
 app.register_blueprint(debug_challenge_api)
 # app.register_blueprint(announcement_api) ##temporary revert
 app.register_blueprint(pseudocode_bank_api)
+app.register_blueprint(pseudocodeanswer_bank_api)
 app.register_blueprint(character_api)
 
 # Jokes file initialization
@@ -122,6 +123,7 @@ with app.app_context():
     initRobopUsers()
     init_endgame_data()
     initPseudocodeQuestionBank(force_recreate=True)
+    initPseudocodeAnswerBank(force_recreate=True)
     init_debug_challenge_data()
 
 login_manager.login_view = "login"
