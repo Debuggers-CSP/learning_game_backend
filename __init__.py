@@ -139,10 +139,19 @@ if DB_ENDPOINT and DB_USERNAME and DB_PASSWORD:
     dbURI = dbString + "/" + dbName
     backupURI = None  # MySQL backup would require a different approach
 else:
-    # Development - Use SQLite
-    dbString = "sqlite:///volumes/"
-    dbURI = dbString + dbName + ".db"
-    backupURI = dbString + dbName + "_bak.db"
+    # Development - Use SQLite (ABSOLUTE PATH so it always goes to the same place)
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    volumes_dir = os.path.join(base_dir, "volumes")
+    os.makedirs(volumes_dir, exist_ok=True)
+
+    db_path = os.path.join(volumes_dir, f"{dbName}.db")
+    bak_path = os.path.join(volumes_dir, f"{dbName}_bak.db")
+
+    dbURI = "sqlite:///" + db_path
+    backupURI = "sqlite:///" + bak_path
+
+    # keep these for display/debug
+    dbString = "sqlite:///" + volumes_dir + "/"
 
 # Set database configuration in Flask app
 app.config["DB_ENDPOINT"] = DB_ENDPOINT
@@ -270,8 +279,9 @@ def init_app_db_and_seed():
 
         # Print tables to confirm
         try:
+            from sqlalchemy import inspect
             print("✅ DB URI:", app.config.get("SQLALCHEMY_DATABASE_URI"))
-            print("✅ Tables:", db.inspect(db.engine).get_table_names())
+            print("✅ Tables:", inspect(db.engine).get_table_names())
         except Exception as e:
             print("⚠️ Could not list tables:", e)
 
