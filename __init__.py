@@ -252,7 +252,7 @@ def init_app_db_and_seed():
         try:
             # IMPORTANT: adjust import if your filename is different
             # If your model file is model/pseudocodeanswer_bank.py this is correct:
-            from model.pseudocodeanswer1_bank import initPseudocodeAnswerBank  # noqa: F401
+            from model.pseudocodeanswer_bank import initPseudocodeAnswerBank  # noqa: F401
         except Exception as e:
             print("⚠️ Could not import model.pseudocodeanswer_bank:", e)
             initPseudocodeAnswerBank = None
