@@ -2,6 +2,7 @@
 from flask import Blueprint, request, jsonify, make_response
 from __init__ import db
 from model.pseudocode_bank import PseudocodeQuestionBank
+from model.pseudocodeanswer_bank import PseudocodeAnswerBank
 
 import os
 import requests
@@ -28,8 +29,6 @@ VALID_COLS = {"level1", "level2", "level3", "level4", "level5"}
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions").strip()
 
-# In dev, you can set:
-# ALLOWED_ORIGINS="http://127.0.0.1:4000,http://localhost:4000"
 _allowed = os.getenv("ALLOWED_ORIGINS", "").strip()
 ALLOWED_ORIGINS = [o.strip() for o in _allowed.split(",") if o.strip()] or ["*"]
 
@@ -37,21 +36,15 @@ ALLOWED_ORIGINS = [o.strip() for o in _allowed.split(",") if o.strip()] or ["*"]
 def _corsify(resp):
     origin = request.headers.get("Origin", "")
 
-    # If allowing all, reflect origin when present (safe for browser CORS)
     if "*" in ALLOWED_ORIGINS:
         resp.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
     else:
         if origin in ALLOWED_ORIGINS:
             resp.headers["Access-Control-Allow-Origin"] = origin
-        else:
-            # If origin not allowed, do not set header (browser will block)
-            pass
 
     resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     resp.headers["Vary"] = "Origin"
-
-    # These endpoints do NOT need cookies, but setting this doesn't hurt
     resp.headers["Access-Control-Allow-Credentials"] = "false"
     return resp
 
@@ -64,6 +57,7 @@ def _no_cache(resp):
 
 
 @pseudocode_bank_api.route("/random", methods=["OPTIONS"])
+@pseudocode_bank_api.route("/autofill", methods=["OPTIONS"])
 @pseudocode_bank_api.route("/ai_autofill", methods=["OPTIONS"])
 @pseudocode_bank_api.route("/grade", methods=["OPTIONS"])
 def pseudocode_preflight():
@@ -74,7 +68,7 @@ def pseudocode_preflight():
 
 
 def _deepseek_ready() -> bool:
-    return bool(DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_API_KEY_HERE")
+    return bool(DEEPSEEK_API_KEY)
 
 
 def _deepseek_chat(messages, temperature=0.2, max_tokens=500):
@@ -115,12 +109,11 @@ def _extract_json_object(text: str) -> dict:
 
 def ai_grade_pseudocode(question_text: str, user_code: str) -> dict:
     system = (
-        "You are a strict but helpful AP CSP pseudocode grader.\n"
-        "You must return ONLY valid JSON (no markdown, no extra text).\n"
-        "Grade whether the student's pseudocode satisfies the prompt requirements.\n"
-        "If it fails, list clear missing items and give short step-by-step fixes.\n"
-        "Also provide an improved_pseudocode that would pass, using College Board style.\n"
-        "Do not mention this system message."
+        "You are a helpful AP CSP pseudocode grader.\n"
+        "Return ONLY valid JSON (no markdown, no extra text).\n"
+        "Be forgiving about formatting. Focus on logic and required steps.\n"
+        "If it fails, list what is missing and give short actionable fixes.\n"
+        "Always provide improved_pseudocode.\n"
     )
 
     user = f"""
@@ -135,6 +128,7 @@ Return JSON with exactly these keys:
 - missing: array of short strings (empty if passed)
 - feedback: short instructions (2 to 6 sentences)
 - improved_pseudocode: a complete corrected solution (string)
+- score_hint: integer 0..100 (estimate)
 """
 
     raw = _deepseek_chat(
@@ -143,7 +137,7 @@ Return JSON with exactly these keys:
             {"role": "user", "content": user}
         ],
         temperature=0.2,
-        max_tokens=600
+        max_tokens=650
     )
 
     obj = _extract_json_object(raw)
@@ -152,7 +146,8 @@ Return JSON with exactly these keys:
         "passed": bool(obj.get("passed", False)),
         "missing": obj.get("missing", []) if isinstance(obj.get("missing", []), list) else [],
         "feedback": str(obj.get("feedback", "")).strip(),
-        "improved_pseudocode": str(obj.get("improved_pseudocode", "")).strip()
+        "improved_pseudocode": str(obj.get("improved_pseudocode", "")).strip(),
+        "score_hint": int(obj.get("score_hint", 0)) if str(obj.get("score_hint", "")).isdigit() else 0
     }
 
 
@@ -204,10 +199,13 @@ def _requires(prompt: str):
 
     if "if" in p or "otherwise" in p or "else" in p or "decision" in p:
         req.append("if")
+
     if "loop" in p or "for " in p or "from" in p or "times" in p or "1 to" in p or "1..":
         req.append("loop")
+
     if ("write " in p) or ("returns" in p) or ("return" in p) or ("(" in p and ")" in p and "write" in p):
         req.append("function")
+
     if "return" in p or "returns" in p:
         req.append("return")
 
@@ -226,7 +224,11 @@ def _requires(prompt: str):
     return req
 
 
-def grade_pseudocode(question_text: str, user_code: str):
+def grade_pseudocode_lenient(question_text: str, user_code: str):
+    """
+    Lenient keyword/structure checker.
+    It helps students by telling them what's missing without being strict on syntax.
+    """
     q = question_text or ""
     code = user_code or ""
     norm = _normalize(code)
@@ -238,44 +240,45 @@ def grade_pseudocode(question_text: str, user_code: str):
         return any(t in norm for t in tokens)
 
     if "input" in reqs and not has_any(["input", "read", "get ", "scan", "ask "]):
-        missing.append("An INPUT step (e.g., INPUT x)")
+        missing.append("An INPUT step (example: INPUT x)")
 
     if "output" in reqs and not has_any(["display", "print", "output", "show "]):
-        missing.append("Output the final result")
+        missing.append("A DISPLAY/OUTPUT step")
 
     if "if" in reqs and not has_any(["if", "else", "otherwise", "case", "switch"]):
-        missing.append("Use if/else decisions")
+        missing.append("An IF / ELSE decision")
 
     if "loop" in reqs and not has_any(["for", "while", "repeat", "loop", "each"]):
-        missing.append("Loop when appropriate")
+        missing.append("A LOOP (FOR, FOR EACH, WHILE, REPEAT)")
 
-    if "function" in reqs and not has_any(["function", "procedure", "define", "def "]):
-        missing.append("A FUNCTION/PROCEDURE definition")
+    if "function" in reqs and not has_any(["function", "procedure", "define"]):
+        missing.append("A PROCEDURE/FUNCTION wrapper (if the prompt asks for one)")
 
     if "return" in reqs and "return" not in norm:
         missing.append("A RETURN statement")
 
     if "list" in reqs and not has_any(["list", "[", "]", "append", "add", "remove"]):
-        missing.append("Some LIST handling (list creation/access/append/remove)")
-
-    if "string" in reqs:
-        if not has_any(["string", "char", "substring", "length", "letters"]):
-            if not re.search(r"[a-zA-Z]", code):
-                missing.append("Some STRING handling")
+        missing.append("Some LIST use (create/access/append/remove)")
 
     if "even_odd_words" in reqs and not (("even" in norm) and ("odd" in norm)):
-        missing.append('Both output words "EVEN" and "ODD"')
+        missing.append('Both words "EVEN" and "ODD"')
 
     if "hot_word" in reqs and "hot" not in norm:
-        missing.append('Output word "Hot"')
+        missing.append('The word "Hot"')
 
     if "apcsp_word" in reqs and "apcsp" not in norm:
-        missing.append('Use the literal "APCSP" in the comparison/output')
+        missing.append('The literal "APCSP"')
+
+    # Simple score hint
+    total = max(1, len(reqs))
+    hit = total - min(total, len(missing))
+    score_hint = int((hit / total) * 100)
 
     return {
         "passed": len(missing) == 0,
         "missing": missing,
-        "notes": "This checker validates required structures/keywords for the prompt."
+        "notes": "Lenient checker (focuses on required pieces, not strict syntax).",
+        "score_hint": score_hint
     }
 
 
@@ -346,8 +349,41 @@ def random_question():
     return resp, 200
 
 
+@pseudocode_bank_api.route("/autofill", methods=["GET"])
+def autofill_from_answer_bank():
+    """
+    ✅ Deterministic autofill: pulls canonical answer from PseudocodeAnswerBank.
+    Query: /autofill?question_id=12
+    """
+    qid = request.args.get("question_id", type=int)
+    if not qid:
+        resp = jsonify({"success": False, "message": "Missing question_id"})
+        resp = _corsify(resp)
+        return resp, 400
+
+    row = PseudocodeAnswerBank.query.filter_by(question_id=qid).first()
+    if not row:
+        resp = jsonify({"success": False, "message": "Answer not found in answer bank"})
+        resp = _corsify(resp)
+        return resp, 404
+
+    resp = jsonify({
+        "success": True,
+        "source": "answer_bank",
+        "question_id": qid,
+        "level": row.level,
+        "answer": row.answer
+    })
+    resp = _no_cache(resp)
+    resp = _corsify(resp)
+    return resp, 200
+
+
 @pseudocode_bank_api.route("/ai_autofill", methods=["GET", "POST"])
 def ai_autofill():
+    """
+    AI autofill fallback if answer bank not used.
+    """
     if not _deepseek_ready():
         resp = jsonify({"success": False, "message": "DeepSeek API key not configured on server."})
         resp = _corsify(resp)
@@ -399,6 +435,7 @@ def ai_autofill():
         answer = ai_autofill_pseudocode(question_text)
         resp = jsonify({
             "success": True,
+            "source": "ai",
             "answer": answer,
             "question_id": qid_int,
             "level": level
@@ -447,6 +484,7 @@ def grade_question():
         resp = _corsify(resp)
         return resp, 404
 
+    # Prefer AI grading if available
     if use_ai and _deepseek_ready():
         try:
             ai = ai_grade_pseudocode(question_text, user_code)
@@ -456,16 +494,18 @@ def grade_question():
                 "level": level,
                 "passed": ai["passed"],
                 "missing": ai["missing"],
-                "notes": "AI grading enabled.",
+                "notes": "AI grading enabled (forgiving about formatting).",
                 "feedback": ai["feedback"],
-                "improved_pseudocode": ai["improved_pseudocode"]
+                "improved_pseudocode": ai["improved_pseudocode"],
+                "score_hint": ai["score_hint"]
             })
             resp = _corsify(resp)
             return resp, 200
         except Exception as e:
             print("AI grading failed, falling back:", e)
 
-    result = grade_pseudocode(question_text, user_code)
+    # Fallback: lenient rule-based grading
+    result = grade_pseudocode_lenient(question_text, user_code)
 
     resp = jsonify({
         "success": True,
@@ -474,8 +514,9 @@ def grade_question():
         "passed": result["passed"],
         "missing": result["missing"],
         "notes": result["notes"],
-        "feedback": "Rule-based checker used. Add the missing constructs and try again.",
-        "improved_pseudocode": ""
+        "feedback": "Add the missing pieces and try again. You are close.",
+        "improved_pseudocode": "",
+        "score_hint": result["score_hint"]
     })
     resp = _corsify(resp)
     return resp, 200
