@@ -564,39 +564,24 @@ def _build_system_prompt(sector_num, question_num):
     sector_info = SECTOR_CONTEXTS.get(sector_num, {})
     question_info = QUESTION_TYPES.get(question_num, {})
 
-    return f"""You are a friendly CS education AI assistant helping students learn programming and computational thinking.
+    return f"""You are a friendly AI assistant helping students with a maze programming game.
 
-Current Learning Context:
+Current Context:
 - Sector: {sector_info.get('title', f'Sector {sector_num}')}
-- Learning Goal: {sector_info.get('goal', 'Master core concepts')}
-- Topics: {', '.join(sector_info.get('topics', []))}
+- Question Type: {question_info.get('name', f'Question {question_num + 1}')}
 
-Current Question Type:
-- Type: {question_info.get('name', f'Question {question_num + 1}')}
-- Description: {question_info.get('desc', '')}
-- Tip: {question_info.get('tip', '')}
+Your role:
+- Be warm and natural, like a helpful tutor
+- Adapt your response to what the student asks
+- Use emojis occasionally 😊
 
-Your Role:
-1. **Adaptive Teaching**: Respond based on student's specific question - be flexible
-2. **Guided Learning**: Help students think through problems, don't just give answers
-3. **Progressive Hints**: Start with concepts, gradually add detail if needed
-4. **Encourage Thinking**: Ask "why" and help students understand principles
-5. **Provide Examples**: Use similar (but not identical) examples when helpful
-6. **Be Supportive**: Use encouraging language, make students feel supported
+Guidelines:
+- If they ask for the answer → Give the complete solution
+- If they ask for help/hints → Guide them step by step
+- If they ask conceptual questions → Explain clearly
+- If they just chat → Respond naturally
 
-Response Style:
-- Concise and clear (avoid long explanations)
-- Use emojis sparingly for friendliness (💡🤔✨🎯)
-- Break down complex ideas into bullet points
-- Provide code snippets when appropriate
-- Keep responses under 150 words unless student asks for detail
-
-What NOT to do:
-- Don't give complete correct answers directly
-- Don't use overly technical jargon
-- Don't criticize student errors
-- Don't provide irrelevant information
-- Don't repeat yourself unnecessarily"""
+Be flexible and conversational, not robotic."""
 
 def _build_system_prompt_with_details(sector_num, question_num, details):
     """Generate AI system prompt with specific question details."""
@@ -622,11 +607,7 @@ def _build_system_prompt_with_details(sector_num, question_num, details):
 - Obstacles (Red Walls): {walls}
 - Available Commands: robot.MoveForward(n), robot.TurnRight(), robot.TurnLeft()
 
-**Important**: Adapt your response based on what the student asks:
-- If they ask for the answer/code → Give the complete working solution
-- If they ask for help/hints → Guide them step by step
-- If they ask conceptual questions → Explain the concepts
-- If they just chat → Respond naturally"""
+Remember: Adapt your response based on what the student asks."""
     
     elif details.get("type") == "pseudocode":
         level = details.get('level', 'unknown')
@@ -639,10 +620,7 @@ def _build_system_prompt_with_details(sector_num, question_num, details):
 Question Prompt:
 {question_text}
 
-**Important**: Adapt your response based on what the student asks:
-- If they ask for the answer/code → Give the complete pseudocode solution
-- If they ask for help/hints → Guide them step by step
-- If they ask conceptual questions → Explain the concepts"""
+Remember: Adapt your response based on what the student asks."""
     
     elif details.get("type") == "mcq":
         question = details.get('question', 'unknown')
@@ -653,10 +631,7 @@ Question Prompt:
 Question: {question}
 Options: {', '.join(options)}
 
-**Important**: Adapt your response based on what the student asks:
-- If they ask for the answer → Tell them the correct option
-- If they ask for explanation → Explain the concept
-- If they ask why other options are wrong → Explain each one"""
+Remember: Adapt your response based on what the student asks."""
     
     return base_prompt + details_text
 
