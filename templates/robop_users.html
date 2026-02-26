@@ -93,7 +93,7 @@
 
 <!-- Add User Modal -->
 <div class="modal fade" id="addUserModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-dialog-adduser">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Add New User</h5>
@@ -115,7 +115,7 @@
           </div>
         </form>
         <div class="text-muted small">
-          Note: RobopUser does not include email/role/status columns in your current model, so this modal only creates uid/first/last.
+          Note: This modal only creates uid/first/last (matches your current RobopUser model).
         </div>
       </div>
       <div class="modal-footer">
@@ -148,6 +148,9 @@
   .dataTables_wrapper .dataTables_info {
     padding-top: 0.5rem;
   }
+  .modal-dialog-adduser {
+    margin-top: 8rem !important;
+  }
 </style>
 
 <!-- ========= CSS (order matters) ========= -->
@@ -169,6 +172,14 @@
 $(document).ready(function() {
   let isEditMode = false;
   let table = null;
+
+  // ✅ "Login-style" routing: let Flask generate the correct API prefix
+  // This resolves to: /robop/api/users
+  const USERS_API = "{{ url_for('get_robop_users_api') }}";
+
+  function userUrl(id) {
+    return `${USERS_API}/${id}`;
+  }
 
   table = $('#robopUserTable').DataTable({
     pageLength: 25,
@@ -233,7 +244,7 @@ $(document).ready(function() {
     $cell.data('original', originalContent);
 
     $cell.html(
-      `<input type="text" class="editable-input" value="${originalContent}" data-field="${field}" data-id="${userId}">`
+      `<input type="text" class="editable-input" value="${escapeHtml(originalContent)}" data-field="${field}" data-id="${userId}">`
     ).addClass('editing');
 
     $cell.find('input').focus().select();
@@ -274,7 +285,7 @@ $(document).ready(function() {
     showStatus('Saving...', 'info');
 
     $.ajax({
-      url: `/robop/api/users/${userId}`,
+      url: userUrl(userId), // ✅ FIXED: /robop/api/users/<id>
       method: 'PUT',
       contentType: 'application/json',
       data: JSON.stringify(data),
@@ -299,7 +310,7 @@ $(document).ready(function() {
     const $status = $('#saveStatus');
     $status.removeClass('d-none alert-info alert-success alert-danger')
            .addClass('alert-' + type)
-           .html(`<i class="bi ${type === 'success' ? 'bi-check-circle' : 'bi-exclamation-circle'}"></i> ${message}`);
+           .html(`<i class="bi ${type === 'success' ? 'bi-check-circle' : 'bi-exclamation-circle'}"></i> ${escapeHtml(message)}`);
 
     if (type === 'success') {
       setTimeout(() => $status.addClass('d-none'), 3000);
@@ -315,14 +326,13 @@ $(document).ready(function() {
   // Save new user
   $('#saveNewUserBtn').click(function() {
     const formData = {
-      uid: $('input[name="uid"]').val(),
-      first_name: $('input[name="first_name"]').val(),
-      last_name: $('input[name="last_name"]').val(),
-      // model does not support email/role/status currently
+      uid: ($('input[name="uid"]').val() || '').trim(),
+      first_name: ($('input[name="first_name"]').val() || '').trim(),
+      last_name: ($('input[name="last_name"]').val() || '').trim(),
     };
 
     $.ajax({
-      url: '/robop/api/users',
+      url: USERS_API, // ✅ FIXED: /robop/api/users
       method: 'POST',
       contentType: 'application/json',
       data: JSON.stringify(formData),
@@ -346,13 +356,13 @@ $(document).ready(function() {
     if (!isEditMode) return;
 
     const userId = $(this).data('id');
-    const userName =
-      ($(this).closest('tr').find('td:nth-child(3)').text() || '') + ' ' +
-      ($(this).closest('tr').find('td:nth-child(4)').text() || '');
+    const first = ($(this).closest('tr').find('td:nth-child(3)').text() || '').trim();
+    const last  = ($(this).closest('tr').find('td:nth-child(4)').text() || '').trim();
+    const userName = `${first} ${last}`.trim();
 
-    if (confirm(`Are you sure you want to delete user: ${userName}?`)) {
+    if (confirm(`Are you sure you want to delete user: ${userName || '(unknown)'}?`)) {
       $.ajax({
-        url: `/robop/api/users/${userId}`,
+        url: userUrl(userId), // ✅ FIXED: /robop/api/users/<id>
         method: 'DELETE',
         success: function(response) {
           if (response.success) {
@@ -368,6 +378,16 @@ $(document).ready(function() {
       });
     }
   });
+
+  // Small helper to prevent breaking HTML when inserting text into the DOM
+  function escapeHtml(str) {
+    return String(str)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
 });
 </script>
 

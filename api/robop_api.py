@@ -10,6 +10,7 @@ import re
 import jwt
 from datetime import datetime, timedelta
 from api.robop_jwt_authorize import robop_token_required
+import traceback
 from __init__ import db, app
 
 robop_api = Blueprint("robop_api", __name__, url_prefix="/api/robop")
@@ -866,3 +867,23 @@ def generate_hints():
             "success": False,
             "message": f"Failed to generate hints: {str(e)}"
         }), 500
+
+@robop_api.route("/users", methods=["POST"])
+def create_user():
+    try:
+        print("✅ HIT create_user() in robop_api.py")
+        data = request.get_json(silent=True) or {}
+        print("POST /robop/api/users received:", data)
+
+        # HARDEN: whitelist fields (prevents email forever)
+        allowed = {k: data.get(k) for k in ("uid", "first_name", "last_name", "password")}
+        print("POST /robop/api/users allowed:", allowed)
+
+        user = RobopUser(**{k: v for k, v in allowed.items() if v is not None})
+
+        # ... db.session.add(user), commit, return jsonify(...)
+        return jsonify(success=True)
+
+    except Exception as e:
+        traceback.print_exc()  # <-- this will show the exact file/line passing email
+        return jsonify(success=False, error=str(e)), 400

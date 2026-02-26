@@ -252,13 +252,10 @@ def update_robop_user(user_id):
             user.first_name = data['first_name']
         if 'last_name' in data:
             user.last_name = data['last_name']
-        if 'email' in data:
-            user.email = data['email']
-        if 'role' in data:
-            user.role = data['role']
-        if 'status' in data:
-            user.status = data['status']
-
+        if hasattr(user, "email") and 'email' in data: user.email = data['email']
+        if hasattr(user, "role") and 'role' in data: user.role = data['role']
+        if hasattr(user, "status") and 'status' in data: user.status = data['status']
+        
         db.session.commit()
         return jsonify({"success": True, "message": "User updated successfully"})
     except Exception as e:
@@ -289,17 +286,17 @@ def add_robop_user():
             if field not in data or not data[field]:
                 return jsonify({"success": False, "error": f"{field} is required"}), 400
 
-        existing_user = RobopUser.query.filter_by(uid=data["uid"]).first()
+        # IMPORTANT: use _uid because your column is _uid
+        existing_user = RobopUser.query.filter_by(_uid=data["uid"]).first()
         if existing_user:
             return jsonify({"success": False, "error": "User ID already exists"}), 400
 
+        # If your constructor requires password, give a default one
         new_user = RobopUser(
             uid=data["uid"],
             first_name=data["first_name"],
             last_name=data["last_name"],
-            email=data.get("email"),
-            role=data.get("role", "user"),
-            status=data.get("status", "active")
+            password="default123"  # or generate_password_hash("default123") if needed
         )
 
         db.session.add(new_user)
@@ -310,6 +307,7 @@ def add_robop_user():
             "message": "User added successfully",
             "user_id": new_user.id
         }), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 400
