@@ -35,6 +35,7 @@ def initPseudocodeQuestionBank(force_recreate=False):
     """
     Call this ONCE during app startup.
     It creates the table and seeds 50 questions if empty.
+    ✅ This version seeds 50 ROWS (IDs 1..50), 1 question per row.
     """
     with app.app_context():
         db.create_all()
@@ -118,14 +119,17 @@ def initPseudocodeQuestionBank(force_recreate=False):
             "Find smallest missing positive integer in list L."
         ]
 
-        for i in range(10):
-            db.session.add(PseudocodeQuestionBank(
-                level1=level1_questions[i],
-                level2=level2_questions[i],
-                level3=level3_questions[i],
-                level4=level4_questions[i],
-                level5=level5_questions[i],
-            ))
+        # ✅ Seed 50 rows (IDs 1..50), one question per row
+        for q in level1_questions:
+            db.session.add(PseudocodeQuestionBank(level1=q))
+        for q in level2_questions:
+            db.session.add(PseudocodeQuestionBank(level2=q))
+        for q in level3_questions:
+            db.session.add(PseudocodeQuestionBank(level3=q))
+        for q in level4_questions:
+            db.session.add(PseudocodeQuestionBank(level4=q))
+        for q in level5_questions:
+            db.session.add(PseudocodeQuestionBank(level5=q))
 
         db.session.commit()
         print("PseudocodeQuestionBank seeded with 50 AP CSP questions.")

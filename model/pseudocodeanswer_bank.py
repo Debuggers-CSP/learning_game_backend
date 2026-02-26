@@ -40,7 +40,6 @@ def initPseudocodeAnswerBank(force_recreate: bool = False):
     """
     Call this ONCE during app startup.
     It creates the table and seeds 50 answers if empty.
-    This matches how your PseudocodeQuestionBank seeds.
     """
     from model.pseudocode_bank import PseudocodeQuestionBank  # avoid circular import
 
@@ -115,6 +114,7 @@ def initPseudocodeAnswerBank(force_recreate: bool = False):
             50: "k ← 1\nWHILE true\n  found ← false\n  FOR EACH x IN L\n    IF x = k\n      found ← true\n    END IF\n  END FOR\n  IF found = false\n    RETURN k\n  END IF\n  k ← k + 1\nEND WHILE",
         }
 
+        # Optional levels by id
         LEVEL_BY_ID = {}
         for qid in range(1, 11):
             LEVEL_BY_ID[qid] = "level1"
