@@ -599,20 +599,100 @@ What NOT to do:
 - Don't repeat yourself unnecessarily"""
 
 
+# ✅ 新函数放在这里（紧跟在 _build_system_prompt 之后）
+def _build_system_prompt_with_details(sector_num, question_num, details):
+    """Generate AI system prompt with specific question details."""
+    
+    base_prompt = _build_system_prompt(sector_num, question_num)
+    
+    if not details:
+        return base_prompt
+    
+    details_text = "\n\nCurrent Question Details:\n"
+    
+    if details.get("type") == "robot_simulation":
+        description = details.get('description', 'Navigate robot to goal')
+        grid_size = details.get('grid_size', [5, 5])
+        start_pos = details.get('start_pos', 'unknown')
+        goal_pos = details.get('goal_pos', 'unknown')
+        walls = details.get('walls', [])
+        current_code = details.get('current_code', '(empty)')
+        
+        details_text += f"""
+**Robot Navigation Task:**
+- Task Description: {description}
+- Grid Size: {grid_size}
+- Starting Position: {start_pos}
+- Goal Position: {goal_pos}
+- Obstacles (Red Walls): {walls}
+- Available Commands: robot.MoveForward(n), robot.TurnRight(), robot.TurnLeft()
+
+Student's Current Code:
+```
+{current_code}
+```
+
+When helping:
+- Explain the robot's movement grid system
+- Guide them to visualize the path from start to goal
+- Help them avoid obstacles
+- Don't give the complete solution - help them think through each step
+"""
+    
+    elif details.get("type") == "pseudocode":
+        level = details.get('level', 'unknown')
+        question_id = details.get('question_id', 'unknown')
+        question_text = details.get('question_text', '(no prompt available)')
+        current_code = details.get('current_code', '(empty)')
+        
+        details_text += f"""
+**Pseudocode Challenge:**
+- Level: {level}
+- Question ID: {question_id}
+
+Question Prompt:
+{question_text}
+
+Student's Current Code:
+```
+{current_code}
+```
+
+When helping:
+- Guide them on College Board pseudocode syntax
+- Help them think about algorithm structure (loops, conditionals, variables)
+- Point out logical errors without giving the answer
+- Encourage them to trace through their logic
+"""
+    
+    elif details.get("type") == "mcq":
+        question = details.get('question', 'unknown')
+        options = details.get('options', [])
+        options_str = ', '.join(options)
+        
+        details_text += f"""
+**Multiple Choice Question:**
+Question: {question}
+Options: {options_str}
+
+When helping:
+- Explain the underlying computer science concepts
+- Guide them to think through why each option might be right or wrong
+- Don't reveal the correct answer directly
+- Help them understand the fundamental principles
+"""
+    
+    return base_prompt + details_text
+
+
+# 然后是 @robop_api.route("/ai_chat", methods=["POST"]) ...
+    
+
+
 @robop_api.route("/ai_chat", methods=["POST"])
 def ai_chat():
     """
-    Main AI chat endpoint.
-    Request: {
-        "sector_id": 1-5,
-        "question_num": 0-2,
-        "user_message": "student's question",
-        "conversation_history": [] (optional)
-    }
-    Response: {
-        "success": true,
-        "ai_response": "AI's reply"
-    }
+    Main AI chat endpoint with question details support.
     """
     data = _get_json()
 
@@ -620,6 +700,7 @@ def ai_chat():
     question_num = data.get("question_num")
     user_message = data.get("user_message", "").strip()
     conversation_history = data.get("conversation_history", [])
+    question_details = data.get("question_details", {})  # ✅ 新增
 
     if sector_id is None or question_num is None or not user_message:
         return jsonify({
@@ -634,7 +715,8 @@ def ai_chat():
         }), 400
 
     try:
-        system_prompt = _build_system_prompt(sector_id, question_num)
+        # ✅ 使用增强版 prompt 构建函数
+        system_prompt = _build_system_prompt_with_details(sector_id, question_num, question_details)
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -643,7 +725,6 @@ def ai_chat():
 
         messages.append({"role": "user", "content": user_message})
 
-        # Ensure API key is configured
         if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "YOUR_API_KEY_HERE":
             return jsonify({
                 "success": False,
@@ -671,7 +752,6 @@ def ai_chat():
         )
 
         if response.status_code != 200:
-            # Provide clearer mapping for authentication errors vs other upstream failures
             try:
                 error_data = response.json()
                 upstream_msg = error_data.get('error', {}).get('message') or error_data.get('message')
@@ -718,7 +798,6 @@ def ai_chat():
             "success": False,
             "message": f"Internal server error: {str(e)}"
         }), 500
-
 
 @robop_api.route("/ai_health", methods=["GET"])
 def ai_health_check():
