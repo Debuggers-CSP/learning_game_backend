@@ -1,6 +1,6 @@
 # api/pseudocodeanswer_bank_api.py
 from flask import Blueprint, request, jsonify, make_response
-from model.pseudocodeanswer_bank import PseudocodeAnswerBank
+from model.pseudocodeanswer1_bank import PseudocodeAnswerBank
 import os
 
 pseudocodeanswer_bank_api = Blueprint(
