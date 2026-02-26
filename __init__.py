@@ -278,15 +278,3 @@ def init_app_db_and_seed():
 
 # Run once on startup
 init_app_db_and_seed()
-
-
-# ============================================================
-# (Optional) Blueprint registration
-# ============================================================
-# Only do this if your project DOES NOT already register it elsewhere.
-# If you already register blueprints in app.py/main.py, keep it there.
-try:
-    from api.pseudocode_bank_api import pseudocode_bank_api
-    app.register_blueprint(pseudocode_bank_api)
-except Exception as e:
-    print("ℹ️ pseudocode_bank_api blueprint not registered here (maybe already registered):", e)
