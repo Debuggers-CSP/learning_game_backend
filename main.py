@@ -113,7 +113,7 @@ app.register_blueprint(robop_api)
 app.register_blueprint(endgame_api)
 app.register_blueprint(debug_challenge_api)
 # app.register_blueprint(announcement_api) ##temporary revert
-app.register_blueprint(pseudocode_bank_api)
+#app.register_blueprint(pseudocode_bank_api)
 app.register_blueprint(pseudocodeanswer_bank_api)
 app.register_blueprint(character_api)
 
